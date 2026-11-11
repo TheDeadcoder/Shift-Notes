@@ -49,12 +49,14 @@ def items(cfgs: list[dict]) -> list[dict]:
 
 
 def item_id(item: dict) -> str:
-    return f"{item['donor']}-{item['kind']}-{item['arm']}-L{item['lineage']:02d}-g{item['generation']}"
+    base = f"{item['donor']}-{item['kind']}-{item['arm']}-L{item['lineage']:02d}-g{item['generation']}"
+    return f"{base}-{item['transform']}" if item.get("transform") else base
 
 
-def run(spec: dict, cfgs: list[dict], out: Path, share: float = 1.0, seed: int = 0, donor: str | None = None) -> dict:
+def run(spec: dict, cfgs: list[dict], out: Path, share: float = 1.0, seed: int = 0, donor: str | None = None,
+        pool: list[dict] | None = None) -> dict:
     coder = next(iter(spec))
-    chosen = sorted((i for i in items(cfgs) if donor is None or i["donor"] == donor), key=item_id)
+    chosen = sorted((i for i in (items(cfgs) if pool is None else pool) if donor is None or i["donor"] == donor), key=item_id)
     if share < 1.0:
         chosen = random.Random(seed).sample(chosen, round(share * len(chosen)))
     notes = {item_id(i): i["notes"] for i in chosen}

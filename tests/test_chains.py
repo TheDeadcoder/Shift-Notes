@@ -114,6 +114,21 @@ def test_branch_arms_start_from_the_parent_notes_under_their_own_variant(tmp_pat
     assert (branch["generation"], branch["variant"], branch["notes_in"]) == (2, "G2", parent[1]["notes_next"])
 
 
+def test_a_branch_can_start_from_an_edited_copy_of_the_parent_notes(tmp_path):
+    edits = tmp_path / "edits.jsonl"
+    cfg = {"name": "t", "donor": "d", "seed": 0, "generations": 2, "max_calls": 5, "good_faith": True,
+           "branches": {"A1M": {"parent": "A1", "at": 1, "variant": "G2", "notes_from": str(edits), "transform": "guard"}}}
+    assert chains.run_lineage(Scripted([f"echo '- note' >> {NOTES}"]), cfg, "syn", "A1", 0, tmp_path, stop=1) == 1
+    edits.write_text(json.dumps({"item": "d-syn-A1-L00-g1", "transform": "wipe", "notes": ""}) + "\n")
+    with pytest.raises(RuntimeError, match="no guard edit"):
+        chains.run_lineage(Scripted([]), cfg, "syn", "A1M", 0, tmp_path)
+    with edits.open("a") as f:
+        f.write(json.dumps({"item": "d-syn-A1-L00-g1", "transform": "guard", "notes": "- edited"}) + "\n")
+    assert chains.run_lineage(Scripted([]), cfg, "syn", "A1M", 0, tmp_path) == 1
+    branch = json.loads((tmp_path / "syn-A1M-L00.jsonl").read_text())
+    assert (branch["generation"], branch["variant"], branch["notes_in"]) == (1, "G2", "- edited")
+
+
 def test_run_advances_every_arm_of_a_lineage_shift_by_shift(tmp_path):
     cfg = {"name": "t", "donor": "d", "seed": 0, "generations": 3, "max_calls": 5, "good_faith": True, "kinds": ["syn"],
            "arms": ["A1", "A4"], "lineages": 1, "workers": 1, "branches": {"A1R": {"parent": "A1", "at": 2, "variant": "G2"}}}

@@ -6,7 +6,8 @@ import yaml
 from dotenv import load_dotenv
 
 from ..sandbox.container import Container
-from . import analysis, battery, behavior, calibration, chains, coding, export, notes_coding, potency, probe, vignettes
+from . import (analysis, battery, behavior, calibration, chains, coding, export, mitigations, notes_coding, potency, probe,
+               vignettes)
 
 
 def main() -> None:
@@ -74,6 +75,21 @@ def main() -> None:
     sub.choices["notes-code"].add_argument("--rpm", type=int)
     sub.choices["notes-code"].add_argument("--workers", type=int)
     sub.choices["notes-code"].add_argument("--api-key-env")
+    sub.choices["notes-code"].add_argument("--edits")
+    for name in ("mitigate", "mitigate-report"):
+        m = sub.add_parser(name)
+        m.add_argument("--out", default="runs/mitigations")
+    m = sub.choices["mitigate"]
+    m.add_argument("--configs", default="configs/e1.yaml")
+    m.add_argument("--editor", default="claude-sonnet-5")
+    m.add_argument("--arm", default="A1")
+    m.add_argument("--shift", type=int, default=4)
+    m.add_argument("--kind", default="syn")
+    m.add_argument("--lineages")
+    m.add_argument("--transforms", default=",".join(mitigations.TRANSFORMS))
+    m.add_argument("--api-key-env")
+    sub.choices["mitigate-report"].add_argument("--codes")
+    sub.choices["mitigate-report"].add_argument("--original")
     for name in ("notes-code", "notes-code-report"):
         sub.choices[name].add_argument("--primary", default="codes-deepseek-v4-flash.jsonl")
         sub.choices[name].add_argument("--second", default="codes-second.jsonl")
@@ -83,6 +99,10 @@ def main() -> None:
         return
     if args.cmd == "hand-report":
         print("\n".join(notes_coding.human_report(Path(args.dir), [Path(p) for p in args.coders.split(",")])))
+        return
+    if args.cmd == "mitigate-report":
+        paths = [Path(p) if p else None for p in (args.codes, args.original)]
+        print("\n".join(mitigations.report(Path(args.out) / mitigations.FILE, *paths)))
         return
     if args.cmd in ("export-tables", "hand-bundle"):
         cfgs = [yaml.safe_load(Path(p).read_text()) for p in args.configs.split(",")]
@@ -146,8 +166,20 @@ def main() -> None:
             spec.update({k: v for k, v in (("rpm", args.rpm), ("workers", args.workers),
                                            ("api_key_env", args.api_key_env)) if v})
             target = out / (args.file or f"codes-{args.coder}.jsonl")
-            print(json.dumps(notes_coding.run({args.coder: spec}, cfgs, target, args.share, donor=args.donor)))
+            pool = mitigations.edited(Path(args.edits)) if args.edits else None
+            print(json.dumps(notes_coding.run({args.coder: spec}, cfgs, target, args.share, donor=args.donor, pool=pool)))
+            if pool is not None:
+                return
         print("\n".join(notes_coding.report(out / args.primary, out / args.second)))
+        return
+    if args.cmd == "mitigate":
+        cfgs = [yaml.safe_load(Path(p).read_text()) for p in args.configs.split(",")]
+        spec = dict(specs[args.editor]) | ({"api_key_env": args.api_key_env} if args.api_key_env else {})
+        lineages = {int(j) for j in args.lineages.split(",")} if args.lineages else None
+        chosen = mitigations.select(cfgs, args.arm, args.shift, args.kind, lineages=lineages)
+        target = Path(args.out) / mitigations.FILE
+        print(json.dumps(mitigations.run({args.editor: spec}, chosen, target, tuple(args.transforms.split(",")))))
+        print("\n".join(mitigations.report(target)))
         return
 
     if args.cmd in ("probe", "probe-summary"):

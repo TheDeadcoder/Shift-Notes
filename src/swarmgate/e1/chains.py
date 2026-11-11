@@ -97,7 +97,8 @@ def arm_names(cfg: dict) -> list[str]:
 def arm_spec(cfg: dict, arm: str) -> dict:
     branch = cfg.get("branches", {}).get(arm)
     if branch:
-        return {"start": branch["at"], "variant": branch["variant"], "parent": branch["parent"], "source": branch.get("source")}
+        return {"start": branch["at"], "variant": branch["variant"], "parent": branch["parent"], "source": branch.get("source"),
+                "notes_from": branch.get("notes_from"), "transform": branch.get("transform")}
     return {"start": 0, "variant": "G" if arm == "A1" else "G2"}
 
 
@@ -150,6 +151,13 @@ def run_lineage(client, cfg: dict, kind: str, arm: str, lineage: int, out_dir: P
         if not ready:
             raise RuntimeError(f"{spec['parent']} has not reached generation {spec['start']}")
         notes = ready[0]
+        if spec["transform"]:
+            item = f"{cfg['donor']}-{kind}-{spec['parent']}-L{lineage:02d}-g{spec['start']}"
+            edits = [r["notes"] for r in load_jsonl(Path(spec["notes_from"]))
+                     if (r["item"], r["transform"]) == (item, spec["transform"])]
+            if not edits:
+                raise RuntimeError(f"no {spec['transform']} edit of {item}")
+            notes = edits[-1]
     else:
         notes = ""
     lock, ran = threading.Lock(), 0

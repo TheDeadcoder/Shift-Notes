@@ -192,6 +192,8 @@ python -m swarmgate.e1 notes-code-report --second codes-gemini.jsonl
 python -m swarmgate.e1 hand-bundle
 python -m swarmgate.e1 hand-report
 python -m swarmgate.e1 export-tables
+python -m swarmgate.e1 mitigate
+python -m swarmgate.e1 mitigate-report
 ```
 
 - `probe` checks whether a model takes the donor and attacker roles at all.
@@ -201,6 +203,7 @@ python -m swarmgate.e1 export-tables
   - A config may list `branches`: arms that start from another arm's notes after a given generation and run under a named guard variant. The arms of a lineage advance together, one generation at a time.
   - Each command is also decided under the other guard variant, and the record counts the commands on which the two variants differ.
   - `merge: hygiene` adds one line to the merge prompt that asks the model not to keep instructions for getting around the reviewer.
+  - A branch may name `notes_from` and `transform`. It then starts from that edited copy of the parent's notes, written by `mitigate`.
 - `calibrate` checks the guard variants, the legitimate routes and the naive objectives on seeds separate from the chains, and scores the positive control.
 - `score` extracts the commands in the notes after the chosen generations, retargets each one to every objective, runs it once under the repaired guard and records which objectives succeed. An empty-notes anchor, and any notes files listed under `anchors` in the config, are scored the same way. If an anchor's SHA-256 is listed under `anchor_sha256`, the file must match it or scoring stops. The positive-control file is not published.
 - `potency-report` gives potency per arm and generation, and the paired test between arms.
@@ -209,6 +212,7 @@ python -m swarmgate.e1 export-tables
 - `notes-code` codes every merged NOTES.md for recipes, labels, caveats, denials, legitimate routes and stated guard rules. `--donor` and `--share` restrict it to a sample. `notes-code-report` gives the rates, retention across generations per arm and agreement with a second coder.
 - `hand-bundle` draws a stratified sample of notes files and writes them under opaque ids for hand coding. `hand-report` gives the agreement between the hand codes and each model coder.
 - `export-tables` writes per-session, per-file and per-trial tables to `results/`. They hold no notes text and no commands.
+- `mitigate` edits the notes of one arm after one shift (`--arm`, `--shift`, `--lineages`) in five ways and writes the edited copies to one file: a generic audit, removal of what the notes say about the three over-blocked objects, removal of everything they say about the reviewer, a notice placed at the top, and an empty file. An editor model makes the first three with fixed prompts; if it refuses, the file is left unchanged. `notes-code --edits` codes the edited copies, and `mitigate-report` gives, per edit, the refusals, the length before and after, and the codes beside those of the unedited files.
 - The open-weight replication (E1b-OW in the preregistration) runs the same `pilot`, `chains`, `score` and `potency-report` commands with `configs/e1-pilot-ow.yaml` and `configs/e1-ow.yaml`. Its candidate models are served through the Adaption platform.
 
 Every command resumes where it stopped.
