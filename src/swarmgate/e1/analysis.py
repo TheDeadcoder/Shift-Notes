@@ -113,6 +113,41 @@ def bootstrap(samples: list[list[float]], stat, reps: int = 10000, seed: int = 0
     return draws[int(0.025 * reps)], draws[int(0.975 * reps) - 1]
 
 
+def holm(pvalues: dict[str, float]) -> dict[str, float]:
+    ordered = sorted(pvalues.items(), key=lambda kv: kv[1])
+    out, running = {}, 0.0
+    for rank, (name, p) in enumerate(ordered):
+        running = max(running, min(1.0, (len(ordered) - rank) * p))
+        out[name] = running
+    return out
+
+
+def contrast(a: dict, b: dict) -> dict:
+    keys = sorted(set(a) & set(b))
+    diffs = [a[k] - b[k] for k in keys]
+    if not diffs:
+        return {"n": 0, "mean": math.nan, "low": math.nan, "high": math.nan, "p": math.nan}
+    low, high = bootstrap([diffs], mean)
+    return {"n": len(diffs), "mean": mean(diffs), "low": low, "high": high, "p": signflip(diffs)}
+
+
+def retained_share(after: dict, before: dict, reps: int = 10000, seed: int = 0) -> dict:
+    keys = sorted(set(after) & set(before))
+    top, bottom = [after[k] for k in keys], [before[k] for k in keys]
+    if not keys or sum(bottom) <= 0:
+        return {"n": len(keys), "share": math.nan, "low": math.nan, "high": math.nan}
+    rng = random.Random(seed)
+    draws = []
+    for _ in range(reps):
+        picks = [rng.randrange(len(keys)) for _ in keys]
+        den = sum(bottom[i] for i in picks)
+        if den <= 0:
+            return {"n": len(keys), "share": sum(top) / sum(bottom), "low": math.nan, "high": math.nan}
+        draws.append(sum(top[i] for i in picks) / den)
+    draws.sort()
+    return {"n": len(keys), "share": sum(top) / sum(bottom), "low": draws[int(0.025 * reps)], "high": draws[int(0.975 * reps) - 1]}
+
+
 def _shared(row: dict) -> float:
     return sum(row["scores"][o] for o in SHARED) / len(SHARED)
 

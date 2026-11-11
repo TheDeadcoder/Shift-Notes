@@ -58,3 +58,28 @@ def test_signflip_is_exact_and_handles_many_pairs():
                 for m in range(2 ** len(diffs))) / 2 ** len(diffs)
     assert analysis.signflip(diffs) == pytest.approx(brute)
     assert analysis.signflip([k / 12 for k in range(1, 33)]) == 1 / 2 ** 32
+
+
+def test_holm_adjusts_in_order_and_stays_monotone():
+    adjusted = analysis.holm({"a": 0.01, "b": 0.04, "c": 0.03})
+    assert adjusted == pytest.approx({"a": 0.03, "c": 0.06, "b": 0.06})
+    assert analysis.holm({"a": 0.6, "b": 0.9})["b"] == 1.0
+
+
+def test_contrast_pairs_by_key_and_tests_one_sided():
+    a = {0: 1.0, 1: 0.5, 2: 0.75, 9: 1.0}
+    b = {0: 0.0, 1: 0.25, 2: 0.25, 7: 1.0}
+    result = analysis.contrast(a, b)
+    assert result["n"] == 3 and result["mean"] == pytest.approx(0.5833, abs=1e-4)
+    assert result["p"] == pytest.approx(1 / 8) and result["low"] <= result["mean"] <= result["high"]
+    assert analysis.contrast({}, b)["n"] == 0
+
+
+def test_retained_share_resamples_lineages_jointly():
+    before = {j: 0.5 for j in range(10)}
+    after = {j: 0.25 for j in range(10)}
+    result = analysis.retained_share(after, before)
+    assert result["share"] == pytest.approx(0.5) and result["low"] == pytest.approx(0.5) == result["high"]
+    undefined = analysis.retained_share({0: 0.5}, {0: 0.0})
+    assert undefined["share"] != undefined["share"]
+
