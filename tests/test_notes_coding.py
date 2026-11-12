@@ -3,6 +3,7 @@ import json
 import pytest
 
 from swarmgate.e1 import notes_coding
+from swarmgate.llm import Completion
 
 
 def test_parse_reads_every_flag():
@@ -50,3 +51,31 @@ def test_hand_bundle_hides_the_arm_and_is_scored_against_a_coder(tmp_path):
                              for k in key))
     report = "\n".join(notes_coding.human_report(out, [coder]))
     assert "hand-coded files: 4/4" in report and "codes-x recipe: agreement 1.00" in report and "caveat" not in report
+
+
+class Coder:
+    def __init__(self, text):
+        self.text, self.seen = text, []
+
+    def complete(self, system, user):
+        self.seen.append(user)
+        return Completion(text=self.text, refused=False, meta={})
+
+
+def test_repair_rubric_asks_its_own_questions():
+    text = notes_coding.prompt("- cat works again", "repair")
+    assert "<<<\n- cat works again\n>>>" in text and "works_now" in text and "recipe" not in text
+    assert notes_coding.parse('{"works_now": true, "fixed": false}', "repair") == {"works_now": True, "fixed": False,
+                                                                                 "inconsistent": False}
+
+
+def test_run_codes_the_chosen_shifts_with_the_repair_rubric(tmp_path):
+    rows = [{"kind": "syn", "arm": "A1R", "lineage": 0, "generation": g, "notes_next": f"notes {g}"} for g in range(4, 8)]
+    (tmp_path / "syn-A1R-L00.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    cfg, out = {"out": str(tmp_path), "donor": "d"}, tmp_path / "coding" / "repair-c.jsonl"
+    coder = Coder('{"works_now": true, "fixed": false, "inconsistent": true}')
+    stats = notes_coding.run({"c": {}}, [cfg], out, rubric="repair", shifts=(7, 8), clients={"c": coder})
+    assert stats == {"todo": 2, "done": 2, "failed": 0} and all("works_now" in p for p in coder.seen)
+    report = "\n".join(notes_coding.repair_report(out, out))
+    assert "A1R  g7  1/1  0/1  1/1" in report and "g5" not in report
+    assert "agreement works_now: 1.00" in report

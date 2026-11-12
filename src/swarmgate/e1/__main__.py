@@ -73,6 +73,7 @@ def main() -> None:
         n = sub.add_parser(name)
         n.add_argument("--configs", default="configs/e1.yaml,configs/e1-ow.yaml")
         n.add_argument("--out", default="runs/notes-coding")
+        n.add_argument("--rubric", choices=tuple(notes_coding.RUBRICS), default="notes")
     sub.choices["notes-code"].add_argument("--coder", required=True)
     sub.choices["notes-code"].add_argument("--share", type=float, default=1.0)
     sub.choices["notes-code"].add_argument("--donor")
@@ -81,6 +82,7 @@ def main() -> None:
     sub.choices["notes-code"].add_argument("--workers", type=int)
     sub.choices["notes-code"].add_argument("--api-key-env")
     sub.choices["notes-code"].add_argument("--edits")
+    sub.choices["notes-code"].add_argument("--shifts")
     for name in ("mitigate", "mitigate-report"):
         m = sub.add_parser(name)
         m.add_argument("--out", default="runs/mitigations")
@@ -96,8 +98,8 @@ def main() -> None:
     sub.choices["mitigate-report"].add_argument("--codes")
     sub.choices["mitigate-report"].add_argument("--original")
     for name in ("notes-code", "notes-code-report"):
-        sub.choices[name].add_argument("--primary", default="codes-deepseek-v4-flash.jsonl")
-        sub.choices[name].add_argument("--second", default="codes-second.jsonl")
+        sub.choices[name].add_argument("--primary")
+        sub.choices[name].add_argument("--second")
     args = parser.parse_args()
     if args.cmd == "vignette-report":
         print("\n".join(analysis.vignette_report(Path(args.run))))
@@ -169,16 +171,21 @@ def main() -> None:
     if args.cmd in ("notes-code", "notes-code-report"):
         cfgs = [yaml.safe_load(Path(p).read_text()) for p in args.configs.split(",")]
         out = Path(args.out)
+        prefix = "codes" if args.rubric == "notes" else args.rubric
         if args.cmd == "notes-code":
             spec = dict(specs[args.coder])
             spec.update({k: v for k, v in (("rpm", args.rpm), ("workers", args.workers),
                                            ("api_key_env", args.api_key_env)) if v})
-            target = out / (args.file or f"codes-{args.coder}.jsonl")
+            target = out / (args.file or f"{prefix}-{args.coder}.jsonl")
             pool = mitigations.edited(Path(args.edits)) if args.edits else None
-            print(json.dumps(notes_coding.run({args.coder: spec}, cfgs, target, args.share, donor=args.donor, pool=pool)))
+            shifts = tuple(int(g) for g in args.shifts.split(",")) if args.shifts else None
+            print(json.dumps(notes_coding.run({args.coder: spec}, cfgs, target, args.share, donor=args.donor, pool=pool,
+                                              rubric=args.rubric, shifts=shifts)))
             if pool is not None:
                 return
-        print("\n".join(notes_coding.report(out / args.primary, out / args.second)))
+        report = notes_coding.report if args.rubric == "notes" else notes_coding.repair_report
+        print("\n".join(report(out / (args.primary or f"{prefix}-deepseek-v4-flash.jsonl"),
+                               out / (args.second or f"{prefix}-second.jsonl"))))
         return
     if args.cmd == "mitigate":
         cfgs = [yaml.safe_load(Path(p).read_text()) for p in args.configs.split(",")]
