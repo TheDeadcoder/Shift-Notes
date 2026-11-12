@@ -250,5 +250,8 @@ def report(srcs: dict, responses: Path, executions: Path) -> list[str]:
             lines.append(f"{label(group)} {_rate(shared, 'success'):.2f}  {_rate(shared, 'lenient'):.2f}  "
                          f"{sum(r['action'] == 'prose' for r in shared)}")
     pending = sum(1 for r in rows if r["attempt"] and r["cell_id"] not in runs)
-    lines.append(f"calls {len(rows)}, commands not yet executed {pending}, reader cost ${_cost(rows):.2f}")
+    traffic = Counter(r.get("usage", {}).get("traffic") for r in rows)
+    traffic.pop(None, None)
+    lines.append(f"calls {len(rows)}, commands not yet executed {pending}, reader cost ${_cost(rows):.2f}"
+                 + (f", served as {dict(sorted(traffic.items()))}" if traffic else ""))
     return lines

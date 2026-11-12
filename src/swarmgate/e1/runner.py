@@ -48,7 +48,7 @@ def run_jobs(specs: dict, jobs: list[tuple[str, str, dict]], work, out: Path, cl
         base = {"model": name, "cell_id": key, **cell}
         try:
             limiters[name].wait()
-            record = retrying(work, clients[name], cell)
+            record = retrying(work, clients[name], cell, attempts=specs.get(name, {}).get("attempts", 6))
         except Exception as exc:
             append(errors, {**base, "error": repr(exc)}, lock)
             with lock:

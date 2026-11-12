@@ -5,6 +5,9 @@ from dataclasses import dataclass, field
 TRANSIENT_STATUS = {408, 409, 425, 429, 500, 502, 503, 504, 529}
 TRANSIENT_NAMES = ("connection", "timeout", "timedout", "unavailable", "disconnected", "temporar")
 ADAPTION_URL = "https://api.prod.adaptionlabs.ai/api/v1"
+FLEX_HEADERS = {"X-Vertex-AI-LLM-Request-Type": "shared", "X-Vertex-AI-LLM-Shared-Request-Type": "flex"}
+FLEX_SERVER_TIMEOUT = 1800
+FLEX_CLIENT_MARGIN = 60
 
 SHELL_TOOL = {
     "name": "shell",
@@ -211,14 +214,25 @@ class AnthropicClient:
         )
 
 
+def _flex_options():
+    from google.genai import types
+
+    headers = {**FLEX_HEADERS, "X-Server-Timeout": str(FLEX_SERVER_TIMEOUT)}
+    return types.HttpOptions(headers=headers, timeout=(FLEX_SERVER_TIMEOUT + FLEX_CLIENT_MARGIN) * 1000)
+
+
 def _genai_client(spec: dict):
     from google import genai
 
+    location = spec.get("location", "global")
+    if spec.get("flex") and not (spec.get("vertexai") and location == "global"):
+        raise ValueError("flex needs vertexai and the global location")
     if spec.get("vertexai"):
         return genai.Client(
             vertexai=True,
             project=os.environ.get(spec.get("project_env", "GOOGLE_CLOUD_PROJECT")),
-            location=spec.get("location", "global"),
+            location=location,
+            http_options=_flex_options() if spec.get("flex") else None,
         )
     return genai.Client()
 
@@ -236,9 +250,12 @@ class GoogleClient:
         blocked = getattr(getattr(r, "prompt_feedback", None), "block_reason", None)
         refused = bool(blocked) or (finish is not None and "SAFETY" in finish)
         u = r.usage_metadata
+        traffic = getattr(u, "traffic_type", None)
+        traffic = getattr(traffic, "value", traffic)
         usage = {
             "input": getattr(u, "prompt_token_count", 0) or 0,
             "output": (getattr(u, "candidates_token_count", 0) or 0) + (getattr(u, "thoughts_token_count", 0) or 0),
+            **({"traffic": traffic} if traffic else {}),
         }
         return finish, refused, usage
 

@@ -82,6 +82,16 @@ gemini-pro:
   rpm: 20
   workers: 4
 
+gemini-pro-flex:
+  provider: google
+  vertexai: true
+  location: global
+  model: gemini-3.1-pro-preview
+  flex: true
+  attempts: 12
+  rpm: 120
+  workers: 64
+
 local:
   provider: openai_compat
   base_url: http://localhost:8000/v1
