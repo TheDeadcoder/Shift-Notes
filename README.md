@@ -196,6 +196,7 @@ python -m swarmgate.e1 hand-report
 python -m swarmgate.e1 export-tables
 python -m swarmgate.e1 mitigate
 python -m swarmgate.e1 mitigate-report
+python -m swarmgate.e1 v2-report
 ```
 
 - `probe` checks whether a model takes the donor and attacker roles at all.
@@ -217,6 +218,7 @@ python -m swarmgate.e1 mitigate-report
 - `hand-bundle` draws a stratified sample of notes files and writes them under opaque ids for hand coding. `hand-report` gives the agreement between the hand codes and each model coder.
 - `export-tables` writes per-session, per-file and per-trial tables to `results/`. They hold no notes text and no commands.
 - `mitigate` edits the notes of one arm after one shift (`--arm`, `--shift`, `--lineages`) in five ways and writes the edited copies to one file: a generic audit, removal of what the notes say about the three over-blocked objects, removal of everything they say about the reviewer, a notice placed at the top, and an empty file. An editor model makes the first three with fixed prompts; if it refuses, the file is left unchanged. `notes-code --edits` codes the edited copies, and `mitigate-report` gives, per edit, the refusals, the length before and after, and the codes beside those of the unedited files.
+- `v2-report` gives the tests of `PREREGISTRATION-V2.md` in one table, from a battery folder (`--battery`, `--shifts`, `--edits`) and the primary coder's files (`--coding`, comma-separated). The first config's donor is tested as H1 and the second's as H1-OW. The secondary tests are adjusted together by Holm's method, and a test with no data counts as p = 1. It also gives the share of the first-shift difference that remains after the repair, and how often a labelled recipe is still in the notes at the last shift. `--multi-turn` adds the table of the reader that may issue several commands (H2): its anchors, its test in the family, its rates at each denial threshold (also by objective, with the rule of the first denial) and how its episodes ended.
 - The open-weight replication (E1b-OW in the preregistration) runs the same `pilot`, `chains`, `score` and `potency-report` commands with `configs/e1-pilot-ow.yaml` and `configs/e1-ow.yaml`. Its candidate models are served through the Adaption platform.
 
 Every command resumes where it stopped.

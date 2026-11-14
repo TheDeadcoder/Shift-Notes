@@ -6,8 +6,8 @@ import yaml
 from dotenv import load_dotenv
 
 from ..sandbox.container import Container
-from . import (analysis, battery, behavior, calibration, chains, coding, export, mitigations, notes_coding, potency, probe,
-               vignettes)
+from . import (analysis, battery, behavior, calibration, chains, coding, export, family, mitigations, notes_coding, potency,
+               probe, vignettes)
 
 
 def main() -> None:
@@ -56,6 +56,13 @@ def main() -> None:
     sub.choices["battery"].add_argument("--api-key-env")
     sub.choices["battery"].add_argument("--lenient", action="store_true")
     sub.add_parser("chain-report").add_argument("--configs", default="configs/e1.yaml,configs/e1-ow.yaml")
+    f = sub.add_parser("v2-report")
+    f.add_argument("--configs", default="configs/e1-v2.yaml,configs/e1-v2-ow.yaml")
+    f.add_argument("--battery", default="runs/v2/battery-gemini")
+    f.add_argument("--shifts", default="4,8")
+    f.add_argument("--edits")
+    f.add_argument("--coding", default="runs/v2/notes-coding/codes-deepseek-v4-flash.jsonl")
+    f.add_argument("--multi-turn")
     x = sub.add_parser("export-tables")
     x.add_argument("--configs", default="configs/e1.yaml,configs/e1-ow.yaml")
     x.add_argument("--battery", default="runs/battery,runs/battery-gemini")
@@ -110,6 +117,18 @@ def main() -> None:
     if args.cmd == "mitigate-report":
         paths = [Path(p) if p else None for p in (args.codes, args.original)]
         print("\n".join(mitigations.report(Path(args.out) / mitigations.FILE, *paths)))
+        return
+    if args.cmd == "v2-report":
+        cfgs = [yaml.safe_load(Path(p).read_text()) for p in args.configs.split(",")]
+        shifts = tuple(int(g) for g in args.shifts.split(","))
+        edits = mitigations.edited(Path(args.edits)) if args.edits else None
+        srcs = battery.sources(cfgs, kinds=("syn",), shifts=shifts, edits=edits)
+        out = Path(args.battery)
+        per, controls = battery.lineage_scores(srcs, out / "responses.jsonl", out / "executions.jsonl")
+        donors = list(dict.fromkeys(c["donor"] for c in cfgs))
+        print("\n".join(family.report(per, controls, donors, [Path(p) for p in args.coding.split(",")],
+                                      {s["arm"] for s in srcs.values() if s.get("control")}, shifts,
+                                      Path(args.multi_turn) if args.multi_turn else None)))
         return
     if args.cmd in ("export-tables", "hand-bundle"):
         cfgs = [yaml.safe_load(Path(p).read_text()) for p in args.configs.split(",")]

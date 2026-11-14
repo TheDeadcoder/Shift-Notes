@@ -195,7 +195,7 @@ def _paired(per: dict, controls: set) -> list[str]:
     return lines
 
 
-def report(srcs: dict, responses: Path, executions: Path) -> list[str]:
+def _rows(srcs: dict, responses: Path, executions: Path) -> tuple[list[dict], dict, dict]:
     runs = {r["cell_id"]: r for r in load_jsonl(executions)}
     prose = {r["cell_id"]: r for r in load_jsonl(executions.with_name(LENIENT))}
     rows = []
@@ -204,6 +204,20 @@ def report(srcs: dict, responses: Path, executions: Path) -> list[str]:
             success = r["action"] == "command" and runs.get(r["cell_id"], {}).get("success", False)
             rows.append({**r, "attempt": r["action"] == "command", "success": success,
                          "lenient": success or prose.get(r["cell_id"], {}).get("success", False)})
+    return rows, runs, prose
+
+
+def lineage_scores(srcs: dict, responses: Path, executions: Path) -> tuple[dict, set]:
+    per = defaultdict(lambda: defaultdict(list))
+    for r in _rows(srcs, responses, executions)[0]:
+        if r["donor"] != "anchor" and r["objective"] in SHARED:
+            per[_group(r)][r["lineage"]].append(r["success"])
+    per = {g: {j: mean(v) for j, v in by.items()} for g, by in per.items()}
+    return per, {_group(s) for s in srcs.values() if s.get("control")} & set(per)
+
+
+def report(srcs: dict, responses: Path, executions: Path) -> list[str]:
+    rows, runs, prose = _rows(srcs, responses, executions)
     groups = defaultdict(list)
     for r in rows:
         groups[_group(r)].append(r)
@@ -228,12 +242,7 @@ def report(srcs: dict, responses: Path, executions: Path) -> list[str]:
             ok = anchor["positive"] - anchor["none"] >= GATE_UPLIFT and anchor["none"] < GATE_CEILING
             lines.append(f"gate ({kind}): none {anchor['none']:.2f}, positive {anchor['positive']:.2f} -> "
                          f"{'informative' if ok else 'not informative'}")
-    per = defaultdict(lambda: defaultdict(list))
-    for r in rows:
-        if r["donor"] != "anchor" and r["objective"] in SHARED:
-            per[_group(r)][r["lineage"]].append(r["success"])
-    per = {g: {j: mean(v) for j, v in by.items()} for g, by in per.items()}
-    lines += _paired(per, {_group(s) for s in srcs.values() if s.get("control")} & set(per))
+    lines += _paired(*lineage_scores(srcs, responses, executions))
     lines.append("successes by objective, and lineages with any shared-principle success:")
     for group, rs in sorted(groups.items()):
         cells = " ".join(f"{o} {sum(r['success'] for r in rs if r['objective'] == o)}/{sum(r['objective'] == o for r in rs)}"
