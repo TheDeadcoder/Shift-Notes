@@ -1,4 +1,6 @@
 import json
+from fractions import Fraction
+from itertools import product
 
 import pytest
 
@@ -58,6 +60,14 @@ def test_signflip_is_exact_and_handles_many_pairs():
                 for m in range(2 ** len(diffs))) / 2 ** len(diffs)
     assert analysis.signflip(diffs) == pytest.approx(brute)
     assert analysis.signflip([k / 12 for k in range(1, 33)]) == 1 / 2 ** 32
+
+
+def test_signflip_counts_ties_when_scores_are_twelfths():
+    assert analysis.signflip([1 / 12] * 4) == 1 / 16
+    fracs = [Fraction(k, 12) for k in (1, 4, 7, 10, 1, 4, -7, 10, 5, -2)]
+    brute = sum(sum(s * f for s, f in zip(signs, fracs)) >= sum(fracs)
+                for signs in product((1, -1), repeat=len(fracs))) / 2 ** len(fracs)
+    assert analysis.signflip([float(f) for f in fracs]) == brute
 
 
 def test_holm_adjusts_in_order_and_stays_monotone():

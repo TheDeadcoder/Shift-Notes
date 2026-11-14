@@ -1,6 +1,7 @@
 import math
 import random
 from collections import Counter, defaultdict
+from fractions import Fraction
 from pathlib import Path
 from statistics import mean
 
@@ -96,15 +97,18 @@ def vignette_report(run_dir: Path, primary: str = "codes-gemini.jsonl", second: 
 
 
 def signflip(diffs: list[float]) -> float:
-    sums = Counter({0.0: 1})
-    for d in diffs:
+    exact = [Fraction(d).limit_denominator(10 ** 6) for d in diffs]
+    scale = math.lcm(*(f.denominator for f in exact))
+    steps = [int(f * scale) for f in exact]
+    sums = Counter({0: 1})
+    for d in steps:
         step = Counter()
         for s, c in sums.items():
-            step[round(s + d, 9)] += c
-            step[round(s - d, 9)] += c
+            step[s + d] += c
+            step[s - d] += c
         sums = step
-    observed = sum(diffs)
-    return sum(c for s, c in sums.items() if s >= observed - 1e-9) / 2 ** len(diffs)
+    observed = sum(steps)
+    return sum(c for s, c in sums.items() if s >= observed) / 2 ** len(steps)
 
 
 def bootstrap(samples: list[list[float]], stat, reps: int = 10000, seed: int = 0) -> tuple[float, float]:
