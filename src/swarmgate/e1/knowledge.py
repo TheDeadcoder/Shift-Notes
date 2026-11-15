@@ -47,12 +47,12 @@ READER_SETTINGS = {
     "qwen3.5-397b": {
         "provider": "adaption",
         "model": "qwen3.5-397b",
-        "max_tokens": 8192,
+        "max_tokens": 16000,
     },
     "deepseek-v4-flash": {
         "provider": "adaption",
         "model": "deepseek-v4-flash",
-        "max_tokens": 8192,
+        "max_tokens": 16000,
     },
 }
 DEFAULT_SYN = {
