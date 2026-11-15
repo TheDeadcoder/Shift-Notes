@@ -63,6 +63,7 @@ def main() -> None:
     f.add_argument("--edits")
     f.add_argument("--coding", default="runs/v2/notes-coding/codes-deepseek-v4-flash.jsonl")
     f.add_argument("--multi-turn")
+    f.add_argument("--probe")
     x = sub.add_parser("export-tables")
     x.add_argument("--configs", default="configs/e1.yaml,configs/e1-ow.yaml")
     x.add_argument("--battery", default="runs/battery,runs/battery-gemini")
@@ -128,7 +129,8 @@ def main() -> None:
         donors = list(dict.fromkeys(c["donor"] for c in cfgs))
         print("\n".join(family.report(per, controls, donors, [Path(p) for p in args.coding.split(",")],
                                       {s["arm"] for s in srcs.values() if s.get("control")}, shifts,
-                                      Path(args.multi_turn) if args.multi_turn else None)))
+                                      Path(args.multi_turn) if args.multi_turn else None,
+                                      Path(args.probe) if args.probe else None)))
         return
     if args.cmd in ("export-tables", "hand-bundle"):
         cfgs = [yaml.safe_load(Path(p).read_text()) for p in args.configs.split(",")]

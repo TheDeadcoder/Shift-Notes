@@ -1,8 +1,10 @@
 from collections import Counter, defaultdict
+from fractions import Fraction
 from pathlib import Path
 from statistics import mean
 
 from ..e0.observer import load_jsonl
+from . import knowledge
 from .analysis import contrast, holm, retained_share, signflip
 from .battery import GATE_UPLIFT
 
@@ -139,12 +141,87 @@ def attempts_test(path: Path) -> tuple[tuple[str, dict] | None, list[str]]:
     return (label, contrast(score["A1"], score["A4"])), lines + detail
 
 
+def _paired(rows: list[dict], reader: str, value) -> dict:
+    per = {arm: defaultdict(list) for arm in knowledge.ARMS}
+    for r in rows:
+        if r["reader"] == reader:
+            per[r["arm"]][r["lineage"]].append(value(r))
+    return contrast(*({j: mean(v) for j, v in per[arm].items()} for arm in knowledge.ARMS))
+
+
+def _stale(rows: list[dict], reader: str) -> dict:
+    return _paired(rows, reader, lambda r: r["category_means"]["repaired_benign"] - r["category_means"]["benign_allowed"])
+
+
+def _split(folder: Path, chain: list[dict], readers: list[str]) -> list[str]:
+    log = folder / knowledge.REPLY_LOG
+    if not log.exists():
+        return []
+    group = {it["item_id"]: "blocked" if it["category"] == "repaired_benign" else
+             "same" if it["path"] in knowledge.REPAIRED_SET else "other"
+             for it in knowledge.select_probe_items() if it["category"] in ("repaired_benign", "benign_allowed")}
+    kept = {r["probe_id"] for r in chain}
+    replies = [r for r in load_jsonl(log) if r["probe_id"] in kept]
+    lines = []
+    for reader in readers:
+        gap = {name: _paired(replies, reader, lambda r, name=name: mean(
+            p for i, p in r["item_probs"].items() if group.get(i) == name))["mean"] for name in ("blocked", "same", "other")}
+        lines.append(f"H3b split {reader}: G blocked on the repaired files {gap['blocked']:.3f}; G allowed on the same files "
+                     f"{gap['same']:.3f}; G allowed on other objects {gap['other']:.3f}")
+    return lines
+
+
+def probe_test(folder: Path) -> tuple[tuple[str, dict] | None, list[str]]:
+    rows = list({r["cell_id"]: r for r in load_jsonl(folder / knowledge.TABLE_FILE)}.values())
+    chain = [r for r in rows if r["donor"] != "anchor"]
+    lines, passed = [], []
+    for reader in knowledge.READERS:
+        rate = {arm: [Fraction(r["score_num"], r["score_den"]) for r in rows
+                      if (r["donor"], r["reader"], r["arm"]) == ("anchor", reader, arm)] for arm in ("none", "positive")}
+        if not all(rate.values()):
+            continue
+        none, positive = (sum(rate[arm]) / len(rate[arm]) for arm in ("none", "positive"))
+        ok = (positive - none >= knowledge.GATE_UPLIFT and positive >= knowledge.GATE_POSITIVE_MIN
+              and none < knowledge.GATE_NONE_MAX)
+        passed += [reader] if ok else []
+        mine = [r for r in rows if r["reader"] == reader]
+        lines.append(f"H3 anchors {reader}: none {float(none):.2f}, positive {float(positive):.2f} -> "
+                     f"{'passed' if ok else 'failed'}; replies not read {sum(r['status'] != 'parsed' for r in mine)}/{len(mine)}")
+    if not chain:
+        return None, lines
+    files = Counter((r["reader"], r["arm"], r["lineage"]) for r in chain)
+    lineages = {j for _, _, j in files}
+    if any(files[(reader, arm, j)] != knowledge.SAMPLES for reader in passed for arm in knowledge.ARMS for j in lineages):
+        return None, lines + [f"H3 table is incomplete: {len(chain)} replies on {len({k[1:] for k in files})} files"]
+    summary = knowledge.summarize_study(chain, tuple(passed))
+    for reader, d in summary["per_reader"].items():
+        lines.append(f"H3 {reader}: boundary score A1 - A4 {d['mean']:.3f} over {d['n']} pairs, 95% CI [{d['low']:.3f}, "
+                     f"{d['high']:.3f}], p = {d['p']:.4f}")
+    stale = {reader: (_stale(chain, reader), summary["h3b_repaired"][reader]) for reader in summary["per_reader"]}
+    for reader, (b, raw) in stale.items():
+        lines.append(f"H3b {reader}: predicted blocking on benign commands G blocked less those G allowed, A1 - A4 "
+                     f"{b['mean']:.3f} [{b['low']:.3f}, {b['high']:.3f}], p = {b['p']:.4f}; G blocked alone {raw['mean']:.3f} "
+                     f"[{raw['low']:.3f}, {raw['high']:.3f}]")
+    lines += _split(folder, chain, list(stale))
+    if knowledge.CLAUDE_READER not in summary["per_reader"]:
+        return None, lines + [f"H3 and H3b count as p = 1: {knowledge.CLAUDE_READER} did not pass its anchors"]
+    worst, (b, _) = max(stale.items(), key=lambda kv: kv[1][0]["p"])
+    lines.append(f"H3b outside the Holm family: largest p of {len(stale)} readers ({worst}) = {b['p']:.4f}")
+    reader, d = max(summary["per_reader"].items(), key=lambda kv: kv[1]["p"])
+    label = (f"{chain[0]['donor']} boundary score, A1@{chain[0]['shift']} - A4@{chain[0]['shift']}, largest p of "
+             f"{len(summary['per_reader'])} readers ({reader})")
+    return (label, d), lines
+
+
 def report(per: dict, controls: set, donors: list[str], coder_files: list[Path], control_arms: set,
-           shifts: tuple[int, ...], attempts: Path | None = None) -> list[str]:
+           shifts: tuple[int, ...], attempts: Path | None = None, probe: Path | None = None) -> list[str]:
     tests, share = reader_tests(per, controls, donors, shifts)
     h2, extra = attempts_test(attempts) if attempts else (None, [])
     if h2:
         tests["H2"] = h2
+    h3, more = probe_test(probe) if probe else (None, [])
+    if h3:
+        tests["H3"] = h3
     lab = labelled(coder_files)
     h6 = class_test(lab, shifts[0])
     ps = {name: tests[name][1]["p"] for name in SECONDARY if name in tests}
@@ -166,4 +243,4 @@ def report(per: dict, controls: set, donors: list[str], coder_files: list[Path],
     if share:
         lines.append(f"H4b retained share: {share['share']:.2f} [{share['low']:.2f}, {share['high']:.2f}] "
                      f"over {share['n']} pairs")
-    return lines + (persistence(lab, donors[0], control_arms, shifts[0], shifts[-1]) if donors else []) + extra
+    return lines + (persistence(lab, donors[0], control_arms, shifts[0], shifts[-1]) if donors else []) + extra + more

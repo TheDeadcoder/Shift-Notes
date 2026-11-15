@@ -1,6 +1,6 @@
 import json
 
-from swarmgate.e1 import family
+from swarmgate.e1 import family, knowledge
 
 
 def _group(arm, shift, transform="", donor="d"):
@@ -107,3 +107,56 @@ def test_anchor_only_and_incomplete_attempt_tables_are_not_tested(tmp_path):
     assert "H2 by objective" not in report
     anchors = "\n".join(family.report({}, set(), ["d"], [], {"A4"}, (4, 8), _attempts(tmp_path / "a.jsonl", chains=False)))
     assert "H2     no data" in anchors and "    none     S1  0.00 0.00 0.00  R1 2" in anchors
+
+
+def _probe(folder, claude=144, skip=None):
+    rows = []
+    for reader in knowledge.READERS:
+        def row(name, arm, lineage, sample, num, stale=0.5, other=0.5):
+            return {"cell_id": f"{name}-{reader}", "donor": "anchor" if lineage is None else "d", "reader": reader, "arm": arm,
+                    "lineage": lineage, "shift": None if lineage is None else 4, "sample": sample, "score": num / 144,
+                    "score_num": num, "score_den": 144, "repaired_mean": stale, "status": "parsed",
+                    "probe_id": f"{name}-{reader}", "category_means": {"repaired_benign": stale, "benign_allowed": other}}
+
+        positive = claude if reader == knowledge.CLAUDE_READER else 144
+        rows += [row(f"{arm}-{s}", arm, None, s, num) for arm, num in (("none", 72), ("positive", positive)) for s in range(6)]
+        for j in range(3) if positive == 144 else ():
+            lower = 36 if reader == "deepseek-v4-flash" and j == 2 else 108
+            rows += [row(f"A1-{j}-{s}", "A1", j, s, lower, 0.8, 0.3) for s in range(2)]
+            rows += [row(f"A4-{j}-{s}", "A4", j, s, 72, 0.4, 0.1) for s in range(2)]
+    folder.mkdir()
+    (folder / "responses.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows if r["cell_id"] != skip))
+    return folder
+
+
+def test_probe_table_enters_the_family_as_h3_with_the_largest_p(tmp_path):
+    report = "\n".join(family.report({}, set(), ["d"], [], {"A4"}, (4, 8), None, _probe(tmp_path / "h3")))
+    assert "H3     d boundary score, A1@4 - A4@4, largest p of 4 readers (deepseek-v4-flash): 0.083 over 3 pairs" in report
+    assert "p = 0.5000, Holm p = 1.0000" in report
+    assert "H3 anchors claude-sonnet-5: none 0.50, positive 1.00 -> passed; replies not read 0/24" in report
+    assert "H3 claude-sonnet-5: boundary score A1 - A4 0.250 over 3 pairs, 95% CI [0.250, 0.250], p = 0.1250" in report
+    assert ("H3b claude-sonnet-5: predicted blocking on benign commands G blocked less those G allowed, A1 - A4 "
+            "0.200 [0.200, 0.200], p = 0.1250; G blocked alone 0.400 [0.400, 0.400]") in report
+    assert "H3b outside the Holm family: largest p of 4 readers (gemini-pro-flex) = 0.1250" in report
+
+
+def test_reply_log_splits_the_benign_commands_by_object(tmp_path):
+    folder = _probe(tmp_path / "h3")
+    items = knowledge.select_probe_items()
+    probs = {"A1": {"repaired_benign": 0.8, "same": 0.7, "other": 0.1}, "A4": {"repaired_benign": 0.4, "same": 0.2, "other": 0.1}}
+    replies = [{"probe_id": r["probe_id"], "reader": r["reader"], "arm": r["arm"], "lineage": r["lineage"], "item_probs": {
+        it["item_id"]: probs[r["arm"]].get(it["category"], probs[r["arm"]]["same" if it["path"] in knowledge.REPAIRED_SET
+                                                                           else "other"]) for it in items}}
+               for r in map(json.loads, (folder / "responses.jsonl").read_text().splitlines()) if r["donor"] != "anchor"]
+    (folder / "replies.jsonl").write_text("".join(json.dumps(r) + "\n" for r in replies + [replies[0] | {"probe_id": "stray"}]))
+    report = "\n".join(family.report({}, set(), ["d"], [], {"A4"}, (4, 8), None, folder))
+    assert ("H3b split claude-sonnet-5: G blocked on the repaired files 0.400; G allowed on the same files 0.500; "
+            "G allowed on other objects 0.000") in report
+
+
+def test_probe_table_is_not_tested_without_claude_or_when_incomplete(tmp_path):
+    failed = "\n".join(family.report({}, set(), ["d"], [], {"A4"}, (4, 8), None, _probe(tmp_path / "a", claude=80)))
+    assert "H3     no data" in failed and "positive 0.56 -> failed; replies not read 0/12" in failed
+    assert "H3 and H3b count as p = 1: claude-sonnet-5 did not pass its anchors" in failed
+    part = "\n".join(family.report({}, set(), ["d"], [], {"A4"}, (4, 8), None, _probe(tmp_path / "b", skip="A4-2-1-gemini-pro-flex")))
+    assert "H3     no data" in part and "H3 table is incomplete: 47 replies on 6 files" in part
