@@ -54,7 +54,7 @@ def test_coder_tests_pair_classes_and_arms_and_skip_edited_copies(tmp_path):
     })
     report = "\n".join(family.report({}, set(), ["d"], files, {"A4"}, (4, 8)))
     assert "H6     labelled recipe in A1 notes after shift 4, SYN - effect: 3 pairs, 2 SYN only, 0 effect only" in report
-    assert "0 effect only, p = 0.2500, Holm p = 1.0000" in report
+    assert "0 effect only, p = 0.2500, Holm p = 1.0000; by donor: d 2 SYN only, 0 effect only of 3" in report
     assert "H4c labelled recipe after shift 8: A1R 2/3, A4 0/3, p = 0.2500" in report
     assert "still there after shift 8: A1 2/3, A1R 2/3" in report
 

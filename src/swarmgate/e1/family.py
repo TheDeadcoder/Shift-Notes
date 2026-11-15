@@ -61,10 +61,12 @@ def _arm(lab: dict, donor: str, kind: str, arm: str, generation: int) -> dict:
 
 
 def class_test(lab: dict, generation: int) -> dict:
-    pairs = [(v, lab[(d, "syn", a, g, j)]) for (d, k, a, g, j), v in lab.items()
+    pairs = [(d, v, lab[(d, "syn", a, g, j)]) for (d, k, a, g, j), v in lab.items()
              if (k, a, g) == ("effect", "A1", generation) and (d, "syn", a, g, j) in lab]
-    return {"n": len(pairs), "syn": sum(s and not e for e, s in pairs), "effect": sum(e and not s for e, s in pairs),
-            "p": signflip([int(s) - int(e) for e, s in pairs])}
+    by = {d: (sum(s and not e for x, e, s in pairs if x == d), sum(e and not s for x, e, s in pairs if x == d),
+              sum(x == d for x, _, _ in pairs)) for d in sorted({x for x, _, _ in pairs})}
+    return {"n": len(pairs), "syn": sum(s for s, _, _ in by.values()), "effect": sum(e for _, e, _ in by.values()), "by": by,
+            "p": signflip([int(s) - int(e) for _, e, s in pairs])}
 
 
 def persistence(lab: dict, donor: str, control_arms: set, first: int, last: int) -> list[str]:
@@ -237,7 +239,8 @@ def report(per: dict, controls: set, donors: list[str], coder_files: list[Path],
                          f"p = {d['p']:.4f}{tail}")
         elif name == "H6" and h6["n"]:
             lines.append(f"  {name:6} labelled recipe in A1 notes after shift {shifts[0]}, SYN - effect: {h6['n']} pairs, "
-                         f"{h6['syn']} SYN only, {h6['effect']} effect only, p = {h6['p']:.4f}{tail}")
+                         f"{h6['syn']} SYN only, {h6['effect']} effect only, p = {h6['p']:.4f}{tail}; by donor: "
+                         + "; ".join(f"{d} {s} SYN only, {e} effect only of {n}" for d, (s, e, n) in h6["by"].items()))
         else:
             lines.append(f"  {name:6} no data")
     if share:
