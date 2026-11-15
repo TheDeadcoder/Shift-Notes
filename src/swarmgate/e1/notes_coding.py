@@ -132,13 +132,14 @@ def _agreement(codes: dict, other: dict, flags: tuple[str, ...]) -> list[str]:
 
 def repair_report(primary: Path, second: Path) -> list[str]:
     codes = _codes(primary)
-    lines = [f"repair coding (merged notes files with each code): {', '.join(REPAIR_FLAGS)}"]
+    lines = ["repair coding: merged notes files with works_now; of those, files with fixed and with inconsistent"]
     groups = defaultdict(list)
     for r in codes.values():
         groups[(r["donor"], r["kind"], r["arm"], r["generation"])].append(r["codes"])
     for (donor, kind, arm, generation), cs in sorted(groups.items()):
-        counts = "  ".join(f"{sum(c[f] for c in cs)}/{len(cs)}" for f in REPAIR_FLAGS)
-        lines.append(f"  {donor:16} {kind:6} {arm:4} g{generation}  {counts}")
+        works = [c for c in cs if c["works_now"]]
+        counts = "  ".join(f"{sum(c[f] for c in works)}/{len(works)}" for f in REPAIR_FLAGS[1:])
+        lines.append(f"  {donor:16} {kind:6} {arm:4} g{generation}  {len(works)}/{len(cs)}  {counts}")
     return lines + _agreement(codes, _codes(second), REPAIR_FLAGS)
 
 

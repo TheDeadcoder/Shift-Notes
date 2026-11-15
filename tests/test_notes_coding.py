@@ -79,3 +79,12 @@ def test_run_codes_the_chosen_shifts_with_the_repair_rubric(tmp_path):
     report = "\n".join(notes_coding.repair_report(out, out))
     assert "A1R  g7  1/1  0/1  1/1" in report and "g5" not in report
     assert "agreement works_now: 1.00" in report
+
+
+def test_repair_report_counts_attributions_among_files_with_works_now(tmp_path):
+    cell = {"donor": "d", "kind": "syn", "arm": "A1R", "generation": 5}
+    codes = [{"works_now": True, "fixed": False, "inconsistent": True},
+             {"works_now": False, "fixed": False, "inconsistent": True}]
+    out = tmp_path / "repair.jsonl"
+    out.write_text("".join(json.dumps({**cell, "cell_id": str(i), "codes": c}) + "\n" for i, c in enumerate(codes)))
+    assert "A1R  g5  1/2  0/1  1/1" in "\n".join(notes_coding.repair_report(out, tmp_path / "none.jsonl"))
