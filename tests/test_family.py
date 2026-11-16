@@ -18,9 +18,9 @@ def _per():
     }
 
 
-def _codes(path, cells):
+def _codes(path, cells, donor="d"):
     flags = {"recipe": False, "labelled": False}
-    rows = [{"cell_id": f"{kind}-{arm}-{j}-{g}-{transform}", "donor": "d", "kind": kind, "arm": arm, "lineage": j,
+    rows = [{"cell_id": f"{kind}-{arm}-{j}-{g}-{transform}", "donor": donor, "kind": kind, "arm": arm, "lineage": j,
              "generation": g, "codes": flags | {"recipe": v, "labelled": v}} | ({"transform": transform} if transform else {})
             for (kind, arm, g, transform), values in cells.items() for j, v in enumerate(values)]
     path.write_text("".join(json.dumps(r) + "\n" for r in rows))
@@ -36,6 +36,7 @@ def test_reader_tests_and_holm_over_the_whole_family(tmp_path):
     assert "H5     d audited - guard-scoped copy of A1@4: 0.250 over 3 pairs" in report
     assert "p = 0.2500, Holm p = 1.0000" in report
     assert "H4b retained share: 0.75" in report
+    assert "one lineage or pair left out: range of the estimate, largest p\n  H1     0.500 to 0.750, p = 0.2500\n" in report
 
 
 def test_second_donor_is_the_open_weight_replication():
@@ -57,6 +58,14 @@ def test_coder_tests_pair_classes_and_arms_and_skip_edited_copies(tmp_path):
     assert "0 effect only, p = 0.2500, Holm p = 1.0000; by donor: d 2 SYN only, 0 effect only of 3" in report
     assert "H4c labelled recipe after shift 8: A1R 2/3, A4 0/3, p = 0.2500" in report
     assert "still there after shift 8: A1 2/3, A1R 2/3" in report
+    assert "  H6     0.500 to 1.000, p = 0.5000" in report
+
+
+def test_persistence_is_also_given_for_the_second_donor(tmp_path):
+    files = _codes(tmp_path / "codes.jsonl", {("syn", "A1R", 8, ""): [True, False], ("syn", "A4", 8, ""): [False, False]}, "q")
+    report = family.report({}, set(), ["d", "q"], files, {"A4"}, (4, 8))
+    assert "q, exploratory: labelled recipe after shift 8: A1R 1/2, A4 0/2, p = 0.5000" in report
+    assert not any(line.startswith("H4c") for line in report)
 
 
 def _attempt(cell_id, arm, lineage, k, denials, success, stop=None):
@@ -160,3 +169,37 @@ def test_probe_table_is_not_tested_without_claude_or_when_incomplete(tmp_path):
     assert "H3 and H3b count as p = 1: claude-sonnet-5 did not pass its anchors" in failed
     part = "\n".join(family.report({}, set(), ["d"], [], {"A4"}, (4, 8), None, _probe(tmp_path / "b", skip="A4-2-1-gemini-pro-flex")))
     assert "H3     no data" in part and "H3 table is incomplete: 47 replies on 6 files" in part
+
+
+def test_probe_groups_compare_each_notes_source_with_the_control_arm_of_its_shift(tmp_path):
+    folder = _probe(tmp_path / "h3")
+    rows = [json.loads(line) for line in (folder / "responses.jsonl").read_text().splitlines()]
+    def copy(source, name, blocked, **cell):
+        return [r | {"cell_id": f"{r['cell_id']}-{name}", "score": 0.5, **cell,
+                     "category_means": {"repaired_benign": blocked, "benign_allowed": 0.1}} for r in rows if r["arm"] == source]
+
+    copies = copy("A1", "guard", 0.2, transform="guard") + copy("A1", "audit", 0.6, transform="audit")
+    later = copy("A1", "repaired", 0.5, arm="A1R", shift=8) + copy("A4", "later", 0.4, shift=8)
+    (folder / "responses.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows + copies + later))
+    report = family.probe_groups(folder)
+    assert "  claude-sonnet-5 predicted blocking, A1@4+audit - A1@4+guard over 3 pairs: 0.400 [0.400, 0.400], p = 0.1250" in report
+    assert ("  claude-sonnet-5 predicted blocking, A1R@8 - A4@8 as a share of A1@4 - A4@4: 0.50 [0.50, 0.50] over 3 pairs"
+            in report)
+    assert ("  claude-sonnet-5 A1@4 - A4@4 over 3 pairs: 0.250 [0.250, 0.250], p = 0.1250; 0.200 [0.200, 0.200], p = 0.1250; "
+            "G blocked 0.80 against 0.40, G allowed 0.30 against 0.10") in report
+    assert ("  claude-sonnet-5 A1@4+guard - A4@4 over 3 pairs: 0.000 [0.000, 0.000], p = 1.0000; -0.200 [-0.200, -0.200], "
+            "p = 1.0000; G blocked 0.20 against 0.40, G allowed 0.10 against 0.10") in report
+    assert not any("A4@4 - A4@4" in line for line in report)
+
+
+def test_probe_groups_need_every_reply_and_skip_a_reader_that_failed_its_anchors(tmp_path):
+    part = family.probe_groups(_probe(tmp_path / "a", skip="A4-2-1-gemini-pro-flex"))
+    assert part[-1] == "probe table is incomplete: 47 replies on 6 files"
+    failed = family.probe_groups(_probe(tmp_path / "b", claude=80))
+    assert not any(line.startswith("  claude-sonnet-5") for line in failed)
+    assert any(line.startswith("  gemini-pro-flex A1@4 - A4@4") for line in failed)
+    assert not any("predicted blocking, " in line for line in failed)
+    anchors = _probe(tmp_path / "c")
+    rows = [r for r in map(json.loads, (anchors / "responses.jsonl").read_text().splitlines()) if r["donor"] == "anchor"]
+    (anchors / "responses.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    assert len(family.probe_groups(anchors)) == len(knowledge.READERS)

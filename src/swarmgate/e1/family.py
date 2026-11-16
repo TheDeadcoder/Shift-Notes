@@ -27,6 +27,11 @@ def _gap(per: dict, a: tuple, b: tuple) -> dict:
     return {j: per[a][j] - per[b][j] for j in per[a] if j in per[b]}
 
 
+def left_out(diffs: list[float]) -> dict | None:
+    runs = [diffs[:i] + diffs[i + 1:] for i in range(len(diffs))] if len(diffs) > 1 else []
+    return {"low": min(map(mean, runs)), "high": max(map(mean, runs)), "p": max(map(signflip, runs))} if runs else None
+
+
 def reader_tests(per: dict, controls: set, donors: list[str], shifts: tuple[int, ...]) -> tuple[dict, dict | None]:
     first, last = shifts[0], shifts[-1]
     tests, share = {}, None
@@ -34,7 +39,7 @@ def reader_tests(per: dict, controls: set, donors: list[str], shifts: tuple[int,
     def add(name: str, label: str, a: tuple | None, b: tuple | None) -> None:
         d = contrast(per[a], per[b]) if a and b else {"n": 0}
         if d["n"]:
-            tests[name] = (label, d)
+            tests[name] = (label, d | {"left_out": left_out(list(_gap(per, a, b).values()))})
 
     for name, donor in zip(("H1", "H1-OW"), donors):
         a1, c1 = _find(per, donor, "A1", first), _control(controls, donor, first)
@@ -65,11 +70,12 @@ def class_test(lab: dict, generation: int) -> dict:
              if (k, a, g) == ("effect", "A1", generation) and (d, "syn", a, g, j) in lab]
     by = {d: (sum(s and not e for x, e, s in pairs if x == d), sum(e and not s for x, e, s in pairs if x == d),
               sum(x == d for x, _, _ in pairs)) for d in sorted({x for x, _, _ in pairs})}
+    diffs = [int(s) - int(e) for _, e, s in pairs]
     return {"n": len(pairs), "syn": sum(s for s, _, _ in by.values()), "effect": sum(e for _, e, _ in by.values()), "by": by,
-            "p": signflip([int(s) - int(e) for _, e, s in pairs])}
+            "p": signflip(diffs), "left_out": left_out(diffs)}
 
 
-def persistence(lab: dict, donor: str, control_arms: set, first: int, last: int) -> list[str]:
+def persistence(lab: dict, donor: str, control_arms: set, first: int, last: int, name: str = "H4c") -> list[str]:
     arms = sorted({a for (d, k, a, g, _) in lab if (d, k, g) == (donor, "syn", last)})
     held = {a: _arm(lab, donor, "syn", a, last) for a in arms}
     ctrl = [a for a in arms if a in control_arms]
@@ -77,7 +83,7 @@ def persistence(lab: dict, donor: str, control_arms: set, first: int, last: int)
         return []
     pairs = [(held["A1R"][j], held[ctrl[0]][j]) for j in held["A1R"] if j in held[ctrl[0]]]
     p = signflip([int(a) - int(c) for a, c in pairs])
-    line = (f"H4c labelled recipe after shift {last}: A1R {sum(a for a, _ in pairs)}/{len(pairs)}, "
+    line = (f"{name} labelled recipe after shift {last}: A1R {sum(a for a, _ in pairs)}/{len(pairs)}, "
             f"{ctrl[0]} {sum(c for _, c in pairs)}/{len(pairs)}, p = {p:.4f}")
     start = {j for j, v in _arm(lab, donor, "syn", "A1", first).items() if v}
     kept = ", ".join(f"{a} {sum(held[a].get(j, False) for j in start)}/{sum(j in held[a] for j in start)}"
@@ -140,7 +146,8 @@ def attempts_test(path: Path) -> tuple[tuple[str, dict] | None, list[str]]:
     first = next(iter(files.values()))[0]
     score = {arm: {j: mean(r["outcome"] for r in rs) for j, rs in by.items()} for arm, by in arms.items()}
     label = f"{first['donor']} several commands, A1@{first['shift']} - A4@{first['shift']}, success before the first denial"
-    return (label, contrast(score["A1"], score["A4"])), lines + detail
+    d = contrast(score["A1"], score["A4"]) | {"left_out": left_out([score["A1"][j] - score["A4"][j] for j in score["A1"]])}
+    return (label, d), lines + detail
 
 
 def _paired(rows: list[dict], reader: str, value) -> dict:
@@ -151,8 +158,12 @@ def _paired(rows: list[dict], reader: str, value) -> dict:
     return contrast(*({j: mean(v) for j, v in per[arm].items()} for arm in knowledge.ARMS))
 
 
+def _excess(row: dict) -> float:
+    return row["category_means"]["repaired_benign"] - row["category_means"]["benign_allowed"]
+
+
 def _stale(rows: list[dict], reader: str) -> dict:
-    return _paired(rows, reader, lambda r: r["category_means"]["repaired_benign"] - r["category_means"]["benign_allowed"])
+    return _paired(rows, reader, _excess)
 
 
 def _split(folder: Path, chain: list[dict], readers: list[str]) -> list[str]:
@@ -173,9 +184,8 @@ def _split(folder: Path, chain: list[dict], readers: list[str]) -> list[str]:
     return lines
 
 
-def probe_test(folder: Path) -> tuple[tuple[str, dict] | None, list[str]]:
+def _probe_rows(folder: Path) -> tuple[list[dict], list[str], list[str]]:
     rows = list({r["cell_id"]: r for r in load_jsonl(folder / knowledge.TABLE_FILE)}.values())
-    chain = [r for r in rows if r["donor"] != "anchor"]
     lines, passed = [], []
     for reader in knowledge.READERS:
         rate = {arm: [Fraction(r["score_num"], r["score_den"]) for r in rows
@@ -189,6 +199,69 @@ def probe_test(folder: Path) -> tuple[tuple[str, dict] | None, list[str]]:
         mine = [r for r in rows if r["reader"] == reader]
         lines.append(f"H3 anchors {reader}: none {float(none):.2f}, positive {float(positive):.2f} -> "
                      f"{'passed' if ok else 'failed'}; replies not read {sum(r['status'] != 'parsed' for r in mine)}/{len(mine)}")
+    return [r for r in rows if r["donor"] != "anchor"], lines, passed
+
+
+def _source(row: dict) -> tuple:
+    return row["arm"], row["shift"], row.get("transform") or ""
+
+
+def _label(group: tuple) -> str:
+    arm, shift, transform = group
+    return f"{arm}@{shift}" + (f"+{transform}" if transform else "")
+
+
+def _level(rows: list[dict], reader: str, group: tuple, value) -> dict:
+    per = defaultdict(list)
+    for r in rows:
+        if r["reader"] == reader and _source(r) == group:
+            per[r["lineage"]].append(value(r))
+    return {j: mean(v) for j, v in per.items()}
+
+
+def probe_groups(folder: Path) -> list[str]:
+    chain, lines, passed = _probe_rows(folder)
+    files = Counter((r["reader"], _source(r), r["lineage"]) for r in chain)
+    if any(n != knowledge.SAMPLES for (reader, _, _), n in files.items() if reader in passed):
+        return lines + [f"probe table is incomplete: {len(chain)} replies on {len({k[1:] for k in files})} files"]
+    groups = sorted({k[1] for k in files})
+    if not groups:
+        return lines
+    measures = {"score": lambda r: r["score"], "stale": _excess, "blocked": lambda r: r["category_means"]["repaired_benign"],
+                "allowed": lambda r: r["category_means"]["benign_allowed"]}
+    lines.append("probe by notes source, each against the control arm of the same shift: boundary score; predicted blocking "
+                 "on benign commands G blocked less those G allowed; then the two levels, source against control")
+    for reader in passed:
+        for arm, shift, transform in groups:
+            group, control = (arm, shift, transform), (knowledge.ARMS[1], shift, "")
+            if group == control or control not in groups:
+                continue
+            level = {m: [_level(chain, reader, g, f) for g in (group, control)] for m, f in measures.items()}
+            score, stale = contrast(*level["score"]), contrast(*level["stale"])
+            was, now = (" against ".join(f"{mean(v.values()):.2f}" for v in level[m]) for m in ("blocked", "allowed"))
+            lines.append(f"  {reader} {_label(group)} - {_label(control)} over {score['n']} pairs: {score['mean']:.3f} "
+                         f"[{score['low']:.3f}, {score['high']:.3f}], p = {score['p']:.4f}; {stale['mean']:.3f} "
+                         f"[{stale['low']:.3f}, {stale['high']:.3f}], p = {stale['p']:.4f}; G blocked {was}, G allowed {now}")
+    shifts = sorted({shift for _, shift, _ in groups})
+    (a1, a4), first, last = knowledge.ARMS, shifts[0], shifts[-1]
+    audit, guard = ((a1, first, t) for t in ("audit", "guard"))
+    repair = (("A1R", last, ""), (a4, last, ""), (a1, first, ""), (a4, first, ""))
+    for reader in passed:
+        stale = {g: _level(chain, reader, g, _excess) for g in (audit, guard, *repair) if g in groups}
+        if audit in stale and guard in stale:
+            d = contrast(stale[audit], stale[guard])
+            lines.append(f"  {reader} predicted blocking, {_label(audit)} - {_label(guard)} over {d['n']} pairs: {d['mean']:.3f} "
+                         f"[{d['low']:.3f}, {d['high']:.3f}], p = {d['p']:.4f}")
+        if last > first and all(g in stale for g in repair):
+            share = retained_share(_gap(stale, *repair[:2]), _gap(stale, *repair[2:]))
+            lines.append(f"  {reader} predicted blocking, {_label(repair[0])} - {_label(repair[1])} as a share of "
+                         f"{_label(repair[2])} - {_label(repair[3])}: {share['share']:.2f} [{share['low']:.2f}, "
+                         f"{share['high']:.2f}] over {share['n']} pairs")
+    return lines
+
+
+def probe_test(folder: Path) -> tuple[tuple[str, dict] | None, list[str]]:
+    chain, lines, passed = _probe_rows(folder)
     if not chain:
         return None, lines
     files = Counter((r["reader"], r["arm"], r["lineage"]) for r in chain)
@@ -243,7 +316,15 @@ def report(per: dict, controls: set, donors: list[str], coder_files: list[Path],
                          + "; ".join(f"{d} {s} SYN only, {e} effect only of {n}" for d, (s, e, n) in h6["by"].items()))
         else:
             lines.append(f"  {name:6} no data")
+    spared = {name: tests[name][1]["left_out"] for name in ("H1", *SECONDARY) if name in tests and tests[name][1].get("left_out")}
+    if h6.get("left_out"):
+        spared["H6"] = h6["left_out"]
+    if spared:
+        lines.append("one lineage or pair left out: range of the estimate, largest p")
+        lines += [f"  {name:6} {d['low']:.3f} to {d['high']:.3f}, p = {d['p']:.4f}" for name, d in spared.items()]
     if share:
         lines.append(f"H4b retained share: {share['share']:.2f} [{share['low']:.2f}, {share['high']:.2f}] "
                      f"over {share['n']} pairs")
-    return lines + (persistence(lab, donors[0], control_arms, shifts[0], shifts[-1]) if donors else []) + extra + more
+    for k, donor in enumerate(donors):
+        lines += persistence(lab, donor, control_arms, shifts[0], shifts[-1], "H4c" if k == 0 else f"{donor}, exploratory:")
+    return lines + extra + more

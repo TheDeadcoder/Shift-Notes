@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 from ..sandbox.container import Container
 from . import (analysis, battery, behavior, calibration, chains, coding, export, family, mitigations, notes_coding, potency,
-               probe, vignettes)
+               probe, robustness, vignettes)
 
 
 def main() -> None:
@@ -55,6 +55,7 @@ def main() -> None:
     sub.choices["battery"].add_argument("--exec-workers", type=int, default=8)
     sub.choices["battery"].add_argument("--api-key-env")
     sub.choices["battery"].add_argument("--lenient", action="store_true")
+    sub.choices["battery-report"].add_argument("--public")
     sub.add_parser("chain-report").add_argument("--configs", default="configs/e1.yaml,configs/e1-ow.yaml")
     f = sub.add_parser("v2-report")
     f.add_argument("--configs", default="configs/e1-v2.yaml,configs/e1-v2-ow.yaml")
@@ -64,11 +65,25 @@ def main() -> None:
     f.add_argument("--coding", default="runs/v2/notes-coding/codes-deepseek-v4-flash.jsonl")
     f.add_argument("--multi-turn")
     f.add_argument("--probe")
+    f.add_argument("--readers")
+    f.add_argument("--explore")
+    f.add_argument("--public")
     x = sub.add_parser("export-tables")
     x.add_argument("--configs", default="configs/e1.yaml,configs/e1-ow.yaml")
     x.add_argument("--battery", default="runs/battery,runs/battery-gemini")
     x.add_argument("--coding", default="runs/notes-coding")
     x.add_argument("--out", default="results/e1")
+    x = sub.add_parser("export-records")
+    x.add_argument("--configs", default=",".join(f"configs/{name}.yaml" for name in (
+        "e1-v2", "e1-v2-ow", "e1-v2-effect", "e1-v2-effect-ow", "e1-v2-nogf", "e1-v2-hygiene", "e1-v2-mitigation", "e1")))
+    x.add_argument("--battery", default=",".join(f"runs/v2/battery-{name}" for name in ("gemini", "deepseek", "claude", "qwen")))
+    x.add_argument("--coding", default=",".join(f"runs/v2/notes-coding{name}" for name in (
+        "", "-edits", "-nogf", "-hygiene", "-mitigation")))
+    x.add_argument("--attempts", default="runs/v2/h2-study")
+    x.add_argument("--probe", default=",".join(f"runs/v2/h3-{name}" for name in (
+        "study", "explore-claude", "explore-qwen", "explore-effect", "explore-effect-ow")))
+    x.add_argument("--edits", default="runs/v2/mitigations/edits.jsonl")
+    x.add_argument("--out", default="results/v2")
     h = sub.add_parser("hand-bundle")
     h.add_argument("--configs", default="configs/e1.yaml,configs/e1-ow.yaml")
     h.add_argument("--out", default="runs/hand-coding")
@@ -122,8 +137,11 @@ def main() -> None:
     if args.cmd == "v2-report":
         cfgs = [yaml.safe_load(Path(p).read_text()) for p in args.configs.split(",")]
         shifts = tuple(int(g) for g in args.shifts.split(","))
-        edits = mitigations.edited(Path(args.edits)) if args.edits else None
-        srcs = battery.sources(cfgs, kinds=("syn",), shifts=shifts, edits=edits)
+        if args.public:
+            srcs = export.sources(Path(args.public), cfgs, ("syn",), shifts)
+        else:
+            edits = mitigations.edited(Path(args.edits)) if args.edits else None
+            srcs = battery.sources(cfgs, kinds=("syn",), shifts=shifts, edits=edits)
         out = Path(args.battery)
         per, controls = battery.lineage_scores(srcs, out / "responses.jsonl", out / "executions.jsonl")
         donors = list(dict.fromkeys(c["donor"] for c in cfgs))
@@ -131,11 +149,18 @@ def main() -> None:
                                       {s["arm"] for s in srcs.values() if s.get("control")}, shifts,
                                       Path(args.multi_turn) if args.multi_turn else None,
                                       Path(args.probe) if args.probe else None)))
+        if args.readers:
+            print("\n".join(robustness.readers(srcs, [Path(p) for p in args.readers.split(",")], donors, shifts)))
+        for folder in args.explore.split(",") if args.explore else ():
+            print("\n".join([f"probe folder {folder}"] + family.probe_groups(Path(folder))))
         return
-    if args.cmd in ("export-tables", "hand-bundle"):
+    if args.cmd in ("export-tables", "export-records", "hand-bundle"):
         cfgs = [yaml.safe_load(Path(p).read_text()) for p in args.configs.split(",")]
         if args.cmd == "hand-bundle":
             print(json.dumps(notes_coding.bundle(cfgs, Path(args.out), args.n, args.seed)))
+        elif args.cmd == "export-records":
+            folders = {kind: [Path(p) for p in getattr(args, kind).split(",") if p] for kind in export.KEPT}
+            print(json.dumps(export.public(cfgs, Path(args.out), folders, Path(args.edits) if args.edits else None)))
         else:
             folders = [Path(p) for p in args.battery.split(",")]
             print(json.dumps(export.tables(cfgs, Path(args.out), folders, Path(args.coding))))
@@ -170,8 +195,12 @@ def main() -> None:
     if args.cmd in ("battery", "battery-report"):
         cfgs = [yaml.safe_load(Path(p).read_text()) for p in args.configs.split(",")]
         shifts = tuple(int(g) for g in args.shifts.split(",")) if args.shifts else None
-        edits = mitigations.edited(Path(args.edits), tuple(args.transforms.split(","))) if args.edits else None
-        srcs = battery.sources(cfgs, args.anchors_only, tuple(args.kinds.split(",")) if args.kinds else None, shifts, edits)
+        kinds, transforms = tuple(args.kinds.split(",")) if args.kinds else None, tuple(args.transforms.split(","))
+        if getattr(args, "public", None):
+            srcs = export.sources(Path(args.public), cfgs, kinds, shifts, transforms)
+        else:
+            edits = mitigations.edited(Path(args.edits), transforms) if args.edits else None
+            srcs = battery.sources(cfgs, args.anchors_only, kinds, shifts, edits)
         out = Path(args.out)
         responses, executions = out / "responses.jsonl", out / "executions.jsonl"
         if args.cmd == "battery":
