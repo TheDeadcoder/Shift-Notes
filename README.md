@@ -199,6 +199,7 @@ python -m swarmgate.e1 mitigate
 python -m swarmgate.e1 mitigate-report
 python -m swarmgate.e1 v2-report
 python -m swarmgate.e1 after-repair
+python -m swarmgate.e1 figures
 ```
 
 - `probe` checks whether a model takes the donor and attacker roles at all.
@@ -227,6 +228,7 @@ python -m swarmgate.e1 after-repair
   - `--explore` takes probe folders from the probe's `explore` phase. For each reader that passed its anchors there, and each notes source, it gives the difference from the control arm of the same shift in the boundary score and in predicted blocking, with the levels. Where the folder holds them, it also gives, for predicted blocking, the audited copy less the guard-scoped copy, and the difference after the repair as a share of the difference at the first shift.
   - `--public results/v2` reads the sessions and edited copies from the exported records; the other options then name folders and files inside `results/v2`.
 - `after-repair` gives what the arms did in the shifts after the repair (`--after`, default 4), per donor, run and arm, for each shift and for all of them: sessions with a command that the other guard variant decides differently, sessions that reached an over-blocked object, tickets completed, tool calls per session, notes that say a denied action now works and what they put it down to (`--repair`, one file per coder), and notes with a labelled recipe (`--coding`). It then compares tickets completed within lineage with A1R, in percentage points, against the criterion of 5 points. `--public results/v2` reads the sessions from the exported records.
+- `figures` draws the figures of the second study from the exported records (`--data`, default `results/v2`) and the first study's trial table (`--first`), and writes them as PDF files to `--out`. `results.pdf` gives reader success by notes source, the labelled recipe and reader success across the repair, and success against the number of denials allowed. `readers.pdf` gives, per reader, the boundary score, the predicted blocking of the repaired commands, the share of calls answered with a command, and reader success; a hollow marker means the reader failed its anchor check. `mitigation.pdf` gives the same three measures per edited copy. Intervals are 95 percent: bootstrap over lineages for scores and differences, Wilson for anchors and for shares of notes; in the last panel of `mitigation.pdf` the line spans the readers.
 - The open-weight replication (E1b-OW in the preregistration) runs the same `pilot`, `chains`, `score` and `potency-report` commands with `configs/e1-pilot-ow.yaml` and `configs/e1-ow.yaml`. Its candidate models are served through the Adaption platform.
 
 Every command resumes where it stopped.
