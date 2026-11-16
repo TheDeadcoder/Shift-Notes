@@ -8,7 +8,8 @@ This repository contains:
 - **SwarmGate**, a traced sandbox for studying this;
 - the `swarmgate` package, which runs every experiment;
 - the preregistration and the deviations record;
-- the analysis code behind every reported number.
+- the analysis code behind every reported number;
+- [CLAIMS.md](CLAIMS.md), which maps each claim of the second study to its evidence and the command that prints it.
 
 ## Findings
 
