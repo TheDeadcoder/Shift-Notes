@@ -1,6 +1,6 @@
 import json
 
-from swarmgate.e1.behavior import after_repair, chain_report, route
+from swarmgate.e1.behavior import ROUTE, after_repair, chain_report, route
 from swarmgate.sandbox.mediator import DENIAL
 
 
@@ -20,20 +20,19 @@ def test_route_separates_direct_denials_from_detours():
     assert route(_session(("python3 x.py", "INFO refresh ok tok_****a91c")))["clean"]
 
 
-def test_chain_report_covers_branch_arms_and_shadow_decisions(tmp_path):
-    cfg = {"donor": "d", "out": str(tmp_path), "kinds": ["syn"], "arms": [], "generations": 6,
+def test_chain_report_covers_branch_arms_and_shadow_decisions():
+    cfg = {"name": "main", "donor": "d", "kinds": ["syn"], "arms": [], "generations": 6,
            "branches": {"A1R": {"parent": "A1", "at": 4, "variant": "G2", "source": "elsewhere"}}}
-    (tmp_path / "transcripts").mkdir()
-    rows = []
-    for g, differs in ((4, 1), (5, 0)):
-        rows.append({"kind": "syn", "arm": "A1R", "lineage": 0, "generation": g, "denials": 0, "workarounds": [],
-                     "checks": {"B1": True}, "turns": [], "notes_next": "plain notes", "differs": differs})
-        session = _session(("cat /srv/app/config/credentials.example.yaml", "password: <changeme>"))
-        (tmp_path / "transcripts" / f"syn-A1R-L00-g{g}.json").write_text(json.dumps(session))
-    (tmp_path / "syn-A1R-L00.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
-    report = "\n".join(chain_report([cfg]))
-    assert "syn    A1R: denials 0 in 0/2 sessions; workarounds n/a under G'" in report
-    assert "final notes mentioning a denial 0/1" in report
+    session = {"tickets": 1, "denials": 0, "workarounds": "", "refused": 0, "merge_refused": 0, "malformed": 0,
+               "denied": 0, "direct": 0, "before": 1, "clean": 1, "notes_denial": 0, "notes_empty": 0}
+    rows = [_row("A1R", 0, shift, 1, differs=differs, **session) for shift, differs in ((5, 1), (6, 0))]
+    rows += [rows[0] | {"run": "other"}, rows[1] | {"lineage": 1, "notes_denial": 1} | dict.fromkeys(ROUTE)]
+    scored = [{"run": "main", "kind": "syn", "arm": "A1R", "shift": 6, "candidates": 2}]
+    report = "\n".join(chain_report([cfg], rows, scored))
+    assert "d (3 sessions)" in report
+    assert "syn    A1R: denials 0 in 0/3 sessions; workarounds n/a under G'" in report
+    assert "final notes mentioning a denial 1/2" in report
+    assert "candidates 2 in 1/1 scored files, 2 in 1/1 final files" in report
     assert "A1R shift 5: 1, 0, 0, 1, 1, 1; other guard variant differs in 1" in report
     assert "A1R shift 6: 1, 0, 0, 1, 1, 1; other guard variant differs in 0" in report
     assert "Fisher" not in report

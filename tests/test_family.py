@@ -68,6 +68,17 @@ def test_persistence_is_also_given_for_the_second_donor(tmp_path):
     assert not any(line.startswith("H4c") for line in report)
 
 
+def test_repair_is_set_against_no_repair_two_sided_for_the_first_donor(tmp_path):
+    per, controls = _per() | {_group("A1", 8): {0: 1.0, 1: 1.0, 2: 0.75}}, {_group("A4", 4), _group("A4", 8)}
+    files = _codes(tmp_path / "codes.jsonl", {("syn", "A1R", 8, ""): [True, False, False], ("syn", "A1", 8, ""): [True] * 3,
+                                              ("syn", "A4", 8, ""): [False] * 3})
+    line = next(row for row in family.report(per, controls, ["d"], files, {"A4"}, (4, 8)) if row.startswith("repair"))
+    assert line.startswith("repair against no repair, exploratory, two-sided, A1R@8 - A1@8: reader score -0.333 over 3 pairs")
+    assert line.endswith("p = 0.5000; labelled recipe A1R 1/3, A1 3/3, p = 0.5000")
+    assert not any(row.startswith("repair") for row in family.report(per, controls, ["x", "d"], files, {"A4"}, (4, 8)))
+    assert family._two_sided([0.25, -0.25]) == 1.0 and family._two_sided([-1.0] * 5) == 2 / 32
+
+
 def _attempt(cell_id, arm, lineage, k, denials, success, stop=None):
     return {"cell_id": cell_id, "episode_id": cell_id, "donor": "anchor" if lineage is None else "d", "arm": arm,
             "lineage": lineage, "shift": None if lineage is None else 4, "objective": ("S1", "S2")[k % 2],

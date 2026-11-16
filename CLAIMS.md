@@ -17,7 +17,7 @@ Each claim of the second study, the hypothesis it belongs to, its status in [PRE
 
 ## Commands
 
-All but C9 read only the `results` folder and the configs, so they run in a clean clone.
+Every command reads only the `results` folder and the configs, so all of them run in a clean clone.
 
 **C1**, the tests of the preregistration, the other readers and the probe on the other file sets:
 
@@ -79,12 +79,13 @@ python -m swarmgate.e1 v2-report --public $P --battery $P/battery-gemini --codin
 python -m swarmgate.e1 figures
 ```
 
-**C9**, from the run records, which are not in the repository:
+**C9**, mechanical potency and what the sessions did:
 
 ```bash
-python -m swarmgate.e1 potency-report --config configs/e1-v2.yaml
-python -m swarmgate.e1 potency-report --config configs/e1-v2-ow.yaml
-python -m swarmgate.e1 chain-report --configs configs/e1-v2.yaml,configs/e1-v2-ow.yaml,configs/e1-v2-effect.yaml,configs/e1-v2-effect-ow.yaml
+python -m swarmgate.e1 potency-report --public $P --config configs/e1-v2.yaml
+python -m swarmgate.e1 potency-report --public $P --config configs/e1-v2-ow.yaml
+python -m swarmgate.e1 chain-report --public $P \
+  --configs configs/e1-v2.yaml,configs/e1-v2-ow.yaml,configs/e1-v2-effect.yaml,configs/e1-v2-effect-ow.yaml
 ```
 
 ## Replication
@@ -122,6 +123,7 @@ python -m swarmgate.e1 chain-report --configs configs/e1-v2.yaml,configs/e1-v2-o
 | After the repair, the notes still raise reader success | H4a, family | A1R − A4 after shift 8: 0.281 [0.153, 0.420] over 24 pairs, p = 0.0001, Holm p = 0.0006. Supported | C1, `H4a` |
 | About two thirds of the gap is left | H4b, reported | Retained share 0.64 [0.41, 0.88] | C1, `H4b` |
 | The notes still hold a labelled recipe | H4c, pre-set | After shift 8: A1R 19/24, A4 0/24, p < 0.0001. Of the lineages with one after shift 4, still there: A1 18/18, A1R 16/18. Supported, so H4 is supported | C1, `H4c` |
+| Against no repair, the repair lowers reader success and leaves the labelled recipe almost as common | section 10, exploratory | A1R − A1 after shift 8, two-sided: reader score -0.132 [-0.243, -0.028] over 24 pairs, p = 0.0338; labelled recipe A1R 19/24, A1 20/24, p = 1.0000 | C1, `repair against no repair` |
 | The same holds with Qwen as donor | H4c, reported | A1R 22/32, A4 0/32; still there: A1 24/24, A1R 22/24 | C1, `qwen3.5-397b, exploratory` |
 | Agents meet the repair and do not record it as one | section 10, reported | Claude, A1R, shifts 5 to 8: a formerly denied command ran in 59 of 96 sessions; an over-blocked object was reached in 71 (A4 94, A1 43). The notes say a denied action now works in 43/96 files (second coder 49/96); they put it down to a change in the reviewer in 0 (1) and to inconsistency in 41 (45). Qwen, A1R: 80 of 128 sessions; 13/128 files (6/128) | C4, `shifts 5 to 8` |
 | The stale picture also outlasts the repair | exploratory, unnamed | Predicted blocking, A1R − A4 after shift 8 as a share of A1 − A4 after shift 4, lowest and highest reader: 0.49 to 0.58 on Claude's notes, 0.71 to 1.04 on Qwen's | C1, `probe folder` |

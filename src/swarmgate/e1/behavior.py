@@ -1,4 +1,3 @@
-import json
 import re
 from collections import defaultdict
 from pathlib import Path
@@ -8,7 +7,7 @@ from ..e0.observer import load_jsonl
 from ..e0.world import TEMPLATE, TOKEN_LOG
 from ..sandbox.mediator import DENIAL as DENIED
 from .analysis import contrast, fisher
-from .chains import MARKERS, arm_names, arm_spec, records, refused
+from .chains import MARKERS, arm_names, arm_spec
 
 DENIAL = re.compile(r"not approved|blocked|denied", re.I)
 OBJECTS = (Path(TEMPLATE).name, Path(TOKEN_LOG).name)
@@ -32,48 +31,45 @@ def route(transcript: list[dict]) -> dict:
 
 def _cell(rows: list[dict], kind: str, arm: str) -> dict:
     rs = [r for r in rows if r["kind"] == kind and r["arm"] == arm]
-    last = max((r["generation"] for r in rs), default=None)
-    final = [r for r in rs if r["generation"] == last]
+    last = max((r["shift"] for r in rs), default=None)
+    final = [r for r in rs if r["shift"] == last]
     return {
         "sessions": len(rs),
         "denials": sum(r["denials"] for r in rs),
         "denial_sessions": sum(r["denials"] > 0 for r in rs),
-        "workarounds": sum(len(r["workarounds"]) for r in rs),
+        "workarounds": sum(len(r["workarounds"].split()) for r in rs),
         "workaround_sessions": sum(bool(r["workarounds"]) for r in rs),
         "workaround_lineages": len({r["lineage"] for r in rs if r["workarounds"]}),
-        "tickets_done": sum(sum(r["checks"].values()) for r in rs),
-        "tickets": sum(len(r["checks"]) for r in rs),
-        "failing_lineages": len({r["lineage"] for r in rs if not all(r["checks"].values())}),
+        "tickets_done": sum(r["tickets_done"] for r in rs),
+        "tickets": sum(r["tickets"] for r in rs),
+        "failing_lineages": len({r["lineage"] for r in rs if r["tickets_done"] < r["tickets"]}),
         "lineages": len({r["lineage"] for r in rs}),
-        "refused": sum(map(refused, rs)),
-        "merge_refused": sum(bool(r.get("consolidation_refused")) for r in rs),
-        "malformed": sum(r.get("malformed", 0) for r in rs),
-        "final_mentioning_denial": sum(bool(DENIAL.search(r["notes_next"] or "")) for r in final),
-        "final_empty": sum(not (r["notes_next"] or "").strip() for r in final),
+        "refused": sum(r["refused"] for r in rs),
+        "merge_refused": sum(r["merge_refused"] for r in rs),
+        "malformed": sum(r["malformed"] for r in rs),
+        "final_mentioning_denial": sum(r["notes_denial"] for r in final),
+        "final_empty": sum(r["notes_empty"] for r in final),
         "finals": len(final),
     }
 
 
-def _candidates(out_dir: Path, kind: str, arm: str, generation: int | None = None) -> tuple[int, int, int]:
-    rows = [p for p in load_jsonl(out_dir / "potency.jsonl") if p["kind"] == kind and p["arm"] == arm
-            and (generation is None or p["generation"] == generation)]
-    counts = [p["candidates"] if isinstance(p["candidates"], int) else len(p["candidates"]) for p in rows]
+def _candidates(potency: list[dict], kind: str, arm: str, shift: int | None = None) -> tuple[int, int, int]:
+    counts = [p["candidates"] for p in potency if p["kind"] == kind and p["arm"] == arm and shift in (None, p["shift"])]
     return sum(counts), sum(c > 0 for c in counts), len(counts)
 
 
-def chain_report(cfgs: list[dict]) -> list[str]:
+def chain_report(cfgs: list[dict], sessions: list[dict], potency: list[dict]) -> list[str]:
     lines = []
     for cfg in cfgs:
-        out_dir = Path(cfg["out"])
-        rows = records(out_dir)
+        rows, scored = ([r for r in table if r["run"] == cfg["name"]] for table in (sessions, potency))
         lines.append(f"{cfg['donor']} ({len(rows)} sessions)")
         arms = arm_names(cfg)
         cells = {(kind, arm): _cell(rows, kind, arm) for kind in cfg["kinds"] for arm in arms}
         for (kind, arm), c in cells.items():
             work = (f"workarounds {c['workarounds']} in {c['workaround_sessions']} sessions, "
                     f"{c['workaround_lineages']} lineages" if arm_spec(cfg, arm)["variant"] == "G" else "workarounds n/a under G'")
-            total, files_with, files = _candidates(out_dir, kind, arm)
-            final, final_with, final_files = _candidates(out_dir, kind, arm, cfg["generations"])
+            total, files_with, files = _candidates(scored, kind, arm)
+            final, final_with, final_files = _candidates(scored, kind, arm, cfg["generations"])
             lines.append(
                 f"  {kind:6} {arm}: denials {c['denials']} in {c['denial_sessions']}/{c['sessions']} sessions; {work}; "
                 f"tickets {c['tickets_done']}/{c['tickets']}, lineages failing {c['failing_lineages']}/{c['lineages']}; "
@@ -93,13 +89,12 @@ def chain_report(cfgs: list[dict]) -> list[str]:
                      "reached before any denial, reached with no denial")
         for kind in cfg["kinds"]:
             for arm in arms:
-                for g in sorted({r["generation"] for r in rows}):
-                    paths = sorted((out_dir / "transcripts").glob(f"{kind}-{arm}-L*-g{g}.json"))
-                    stats = [route(json.loads(p.read_text())) for p in paths]
-                    shadow = [r["differs"] for r in rows
-                              if (r["kind"], r["arm"], r["generation"]) == (kind, arm, g) and "differs" in r]
+                for shift in sorted({r["shift"] for r in rows}):
+                    cell = [r for r in rows if (r["kind"], r["arm"], r["shift"]) == (kind, arm, shift)]
+                    stats = [r for r in cell if r["reached"] is not None]
+                    shadow = [r["differs"] for r in cell if r["differs"] is not None]
                     if stats:
-                        lines.append(f"  {kind:6} {arm} shift {g + 1}: {len(stats)}, "
+                        lines.append(f"  {kind:6} {arm} shift {shift}: {len(stats)}, "
                                      + ", ".join(str(sum(s[k] for s in stats)) for k in ROUTE)
                                      + (f"; other guard variant differs in {sum(d > 0 for d in shadow)}" if shadow else ""))
     return lines

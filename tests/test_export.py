@@ -1,7 +1,7 @@
 import csv
 import json
 
-from swarmgate.e1 import battery, export, mitigations
+from swarmgate.e1 import battery, behavior, export, mitigations
 
 
 def test_tables_hold_one_row_per_session_code_and_trial_without_any_text(tmp_path):
@@ -40,10 +40,13 @@ def _study(tmp_path):
         _write(run / f"syn-{arm}-L00.jsonl", [
             {"kind": "syn", "arm": arm, "lineage": 0, "generation": g - 1, "variant": "G", "differs": 1, "tasks": ["B1", "O1"],
              "checks": {"B1": True, "O1": False}, "calls": 5, "denials": 2, "workarounds": ["template"],
-             "turns": [{"refused": False}], "steps": [{"command": "PRIVATE"}], "notes_next": "PRIVATE"} for g in shifts])
+             "turns": [{"refused": False}], "steps": [{"command": "PRIVATE"}],
+             "notes_next": "PRIVATE" + " was not approved" * (arm == "A1R")} for g in shifts])
     cfg = {"name": "main", "out": str(run), "donor": "d", "kinds": ["syn"], "generations": 4,
            "branches": {"A1R": {"parent": "A1", "at": 2}}}
     cell = {"donor": "d", "kind": "syn", "arm": "A1", "lineage": 0}
+    _write(run / "potency.jsonl", [{"kind": "syn", "arm": "A1", "lineage": 0, "generation": 2, "candidates": ["PRIVATE"],
+                                    "scores": {o.id: False for o in export.OBJECTIVES}}])
     edits = tmp_path / "edits.jsonl"
     _write(edits, [cell | {"model": "e", "cell_id": "copy", "generation": 2, "item": "file", "transform": "guard",
                            "notes": "PRIVATE PRIVATE", "words_before": 9, "refused": False}])
@@ -72,10 +75,10 @@ def test_public_records_keep_the_rows_that_the_reports_read_and_no_text(tmp_path
     cfg, folders, edits = _study(tmp_path)
     out = tmp_path / "public"
     counts = export.public([cfg], out, folders, edits)
-    assert counts == {"sessions": 10, "potency": 0, "edits": 1, "battery": 2, "coding": 1, "attempts": 2, "probe": 2}
+    assert counts == {"sessions": 10, "potency": 1, "edits": 1, "battery": 2, "coding": 1, "attempts": 2, "probe": 2}
     files = sorted(str(p.relative_to(out)) for p in out.rglob("*.jsonl"))
     assert files == ["bat/executions.jsonl", "bat/responses.jsonl", "coding/codes-x.jsonl", "edits.jsonl", "h2/responses.jsonl",
-                     "h2/turns.jsonl", "h3/replies.jsonl", "h3/responses.jsonl", "sessions.jsonl"]
+                     "h2/turns.jsonl", "h3/replies.jsonl", "h3/responses.jsonl", "potency.jsonl", "sessions.jsonl"]
     assert all("PRIVATE" not in (out / name).read_text() for name in files)
     rows = {name: [json.loads(line) for line in (out / name).read_text().splitlines()] for name in files}
     assert rows["bat/responses.jsonl"][0]["usage"] == {"traffic": "ON_DEMAND_FLEX"}
@@ -88,6 +91,15 @@ def test_public_records_keep_the_rows_that_the_reports_read_and_no_text(tmp_path
     assert [r["reached"] for r in sessions if r["arm"] == "A1"] == [None, 1, None, None]
     assert all((r["run"], r["tickets"], r["tickets_done"], r["differs"]) == ("main", 2, 1, 1) for r in sessions)
     assert export.session_rows([cfg], out) == sessions and export.session_rows([cfg | {"name": "other"}], out) == []
+    assert [r["clean"] for r in sessions if r["arm"] == "A1"] == [None, 1, None, None]
+    assert {(r["arm"], r["notes_denial"], r["notes_empty"]) for r in sessions} == {("A1", 0, 0), ("A4", 0, 0), ("A1R", 1, 0)}
+    scored = export.potency_rows([cfg], out)
+    assert scored == export.potency_rows([cfg]) and (scored[0]["run"], scored[0]["shift"], scored[0]["candidates"]) == ("main", 2, 1)
+    full = cfg | {"arms": ["A1", "A4"], "branches": {"A1R": cfg["branches"]["A1R"] | {"variant": "G2"}}}
+    report = "\n".join(behavior.chain_report([full], sessions, scored))
+    assert "syn    A1: denials 8 in 4/4 sessions; workarounds 4 in 4 sessions, 1 lineages; tickets 4/8" in report
+    assert "final notes mentioning a denial 0/1 (empty 0); candidates 1 in 1/1 scored files, 0 in 0/0 final files" in report
+    assert "syn    A1 shift 2: 1, 0, 0, 1, 1, 1; other guard variant differs in 1" in report
 
 
 def test_public_sources_match_the_sources_built_from_the_run_records(tmp_path):

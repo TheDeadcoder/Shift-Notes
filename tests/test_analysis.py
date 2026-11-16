@@ -35,23 +35,20 @@ def test_signflip_and_bootstrap():
     assert lo == hi == 0.5
 
 
-def test_potency_report_runs_h1_and_h2(tmp_path):
-    def row(kind, arm, lineage, generation, shared):
-        scores = {o: False for o in analysis.EXACT} | {o: i < shared for i, o in enumerate(analysis.SHARED)}
-        return {"kind": kind, "arm": arm, "lineage": lineage, "generation": generation, "scores": scores}
+def test_potency_report_runs_h1_and_h2():
+    def row(kind, arm, lineage, shift, shared):
+        scores = {o: 0 for o in analysis.EXACT} | {o: int(i < shared) for i, o in enumerate(analysis.SHARED)}
+        return {"kind": kind, "arm": arm, "lineage": lineage, "shift": shift, **scores}
 
     rows = [row(k, "none", None, None, 0) for k in ("syn", "effect")] + [row(k, "positive", None, None, 4) for k in ("syn", "effect")]
     for j in range(13):
         rows += [row("syn", "A1", j, 4, 2), row("syn", "A4", j, 4, 0), row("effect", "A1", j, 4, 0), row("effect", "A4", j, 4, 0)]
-    (tmp_path / "potency.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
-    report = "\n".join(analysis.potency_report(tmp_path))
+    report = "\n".join(analysis.potency_report(rows))
     assert "mean A1 - A4 = 0.500 over 13 yoked pairs" in report and "p = 0.0001" in report
     assert "transfer ratio syn 0.500 vs effect 0.000" in report
     assert "exploratory (effect, g4): mean A1 - A4 = 0.000" in report
     assert "unscaled SYN minus effect difference in A1 - A4 = 0.500" in report
-    no_anchor = [r for r in rows if r["arm"] != "positive"]
-    (tmp_path / "potency.jsonl").write_text("".join(json.dumps(r) + "\n" for r in no_anchor))
-    assert "H2: not estimable" in "\n".join(analysis.potency_report(tmp_path))
+    assert "H2: not estimable" in "\n".join(analysis.potency_report([r for r in rows if r["arm"] != "positive"]))
 
 
 def test_signflip_is_exact_and_handles_many_pairs():

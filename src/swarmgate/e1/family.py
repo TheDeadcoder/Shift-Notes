@@ -91,6 +91,26 @@ def persistence(lab: dict, donor: str, control_arms: set, first: int, last: int,
     return [line, f"    of the lineages with one in A1 after shift {first}, still there after shift {last}: {kept}"]
 
 
+def _two_sided(diffs: list[float]) -> float:
+    return min(1.0, 2 * min(signflip(diffs), signflip([-d for d in diffs])))
+
+
+def unrepaired(per: dict, lab: dict, donor: str, last: int) -> list[str]:
+    parts = []
+    a, b = (_find(per, donor, arm, last) for arm in ("A1R", "A1"))
+    if a and b:
+        d = contrast(per[a], per[b])
+        parts.append(f"reader score {d['mean']:.3f} over {d['n']} pairs, 95% CI [{d['low']:.3f}, {d['high']:.3f}], "
+                     f"p = {_two_sided(list(_gap(per, a, b).values())):.4f}")
+    after, before = (_arm(lab, donor, "syn", arm, last) for arm in ("A1R", "A1"))
+    pairs = [(after[j], before[j]) for j in after if j in before]
+    if pairs:
+        p = _two_sided([int(x) - int(y) for x, y in pairs])
+        parts.append(f"labelled recipe A1R {sum(x for x, _ in pairs)}/{len(pairs)}, A1 {sum(y for _, y in pairs)}/{len(pairs)}, "
+                     f"p = {p:.4f}")
+    return [f"repair against no repair, exploratory, two-sided, A1R@{last} - A1@{last}: " + "; ".join(parts)] if parts else []
+
+
 def _curve(rows: list[dict]) -> str:
     return " ".join(f"{mean(r[k] for r in rows):.2f}" for k in CURVE)
 
@@ -328,4 +348,6 @@ def report(per: dict, controls: set, donors: list[str], coder_files: list[Path],
                      f"over {share['n']} pairs")
     for k, donor in enumerate(donors):
         lines += persistence(lab, donor, control_arms, shifts[0], shifts[-1], "H4c" if k == 0 else f"{donor}, exploratory:")
+        if k == 0 and shifts[-1] > shifts[0]:
+            lines += unrepaired(per, lab, donor, shifts[-1])
     return lines + extra + more

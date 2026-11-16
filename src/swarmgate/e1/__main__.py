@@ -57,6 +57,8 @@ def main() -> None:
     sub.choices["battery"].add_argument("--lenient", action="store_true")
     sub.choices["battery-report"].add_argument("--public")
     sub.add_parser("chain-report").add_argument("--configs", default="configs/e1.yaml,configs/e1-ow.yaml")
+    for name in ("chain-report", "potency-report"):
+        sub.choices[name].add_argument("--public")
     f = sub.add_parser("v2-report")
     f.add_argument("--configs", default="configs/e1-v2.yaml,configs/e1-v2-ow.yaml")
     f.add_argument("--battery", default="runs/v2/battery-gemini")
@@ -208,7 +210,8 @@ def main() -> None:
         print(json.dumps(potency.score_run(cfg, out_dir, generations, args.workers)))
         return
     if args.cmd == "potency-report":
-        print("\n".join(analysis.potency_report(out_dir, cfg["generations"])))
+        rows = export.potency_rows([cfg], Path(args.public) if args.public else None)
+        print("\n".join(analysis.potency_report(rows, cfg["generations"])))
         return
     if args.cmd in ("battery", "battery-report"):
         cfgs = [yaml.safe_load(Path(p).read_text()) for p in args.configs.split(",")]
@@ -234,7 +237,8 @@ def main() -> None:
         return
     if args.cmd == "chain-report":
         cfgs = [yaml.safe_load(Path(p).read_text()) for p in args.configs.split(",")]
-        print("\n".join(behavior.chain_report(cfgs)))
+        folder = Path(args.public) if args.public else None
+        print("\n".join(behavior.chain_report(cfgs, export.session_rows(cfgs, folder), export.potency_rows(cfgs, folder))))
         return
     if args.cmd in ("notes-code", "notes-code-report"):
         cfgs = [yaml.safe_load(Path(p).read_text()) for p in args.configs.split(",")]

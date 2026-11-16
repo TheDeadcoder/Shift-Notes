@@ -5,7 +5,7 @@ from pathlib import Path
 
 from ..e0.observer import load_jsonl
 from . import battery, family, knowledge
-from .behavior import route
+from .behavior import DENIAL, ROUTE, route
 from .chains import records, refused
 from .notes_coding import FLAGS
 from .potency import OBJECTIVES
@@ -111,16 +111,22 @@ def session_rows(cfgs: list[dict], folder: Path | None = None) -> list[dict]:
         run = Path(cfg["out"])
         for r in records(run):
             path = run / "transcripts" / f"{r['kind']}-{r['arm']}-L{r['lineage']:02d}-g{r['generation']}.json"
-            reached = int(route(json.loads(path.read_text()))["reached"]) if path.exists() else None
+            found = route(json.loads(path.read_text())) if path.exists() else {}
+            notes = r["notes_next"] or ""
             rows.append({"run": cfg["name"], **_session(cfg, r), "tickets": len(r["checks"]), "variant": r.get("variant"),
-                         "differs": r.get("differs"), "reached": reached})
+                         "differs": r.get("differs"), **{k: int(found[k]) if found else None for k in ROUTE},
+                         "notes_denial": int(bool(DENIAL.search(notes))), "notes_empty": int(not notes.strip())})
     return rows
 
 
+def potency_rows(cfgs: list[dict], folder: Path | None = None) -> list[dict]:
+    if folder:
+        return [p for p in load_jsonl(folder / POTENCY) if p["run"] in {cfg["name"] for cfg in cfgs}]
+    return [{"run": cfg["name"], **_potency(cfg, p)} for cfg in cfgs for p in load_jsonl(Path(cfg["out"]) / "potency.jsonl")]
+
+
 def public(cfgs: list[dict], out: Path, folders: dict[str, list[Path]], edits: Path | None = None) -> dict:
-    sessions, potency = session_rows(cfgs), []
-    for cfg in cfgs:
-        potency += [{"run": cfg["name"], **_potency(cfg, p)} for p in load_jsonl(Path(cfg["out"]) / "potency.jsonl")]
+    sessions, potency = session_rows(cfgs), potency_rows(cfgs)
     copies = [{k: e[k] for k in ("model", "cell_id", "donor", "kind", "arm", "lineage", "generation", "item", "transform", "refused",
                                  "words_before")} | {"words": len(e["notes"].split())} for e in (_latest(edits) if edits else [])]
     counts = {"sessions": _dump(out / SESSIONS, sessions), "potency": _dump(out / POTENCY, potency),
