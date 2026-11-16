@@ -93,7 +93,8 @@ def report(path: Path, codes: Path | None = None, original: Path | None = None) 
             lines.append(f"  {donor:16} {'unedited':9} n={len(base):3}  {'':30}  {flags(base)}")
         for transform in (t for t in TRANSFORMS if (donor, t) in groups):
             rs = groups[(donor, transform)]
-            words = (sum(r["words_before"] for r in rs) / len(rs), sum(len(r["notes"].split()) for r in rs) / len(rs))
+            after = sum(r["words"] if "words" in r else len(r["notes"].split()) for r in rs)
+            words = (sum(r["words_before"] for r in rs) / len(rs), after / len(rs))
             cs = [coded[r["cell_id"]] for r in rs if r["cell_id"] in coded]
             lines.append(f"  {donor:16} {transform:9} n={len(rs):3}  refused {sum(r['refused'] for r in rs):2}  "
                          f"words {words[0]:4.0f} -> {words[1]:4.0f}" + (f"  {flags(cs)}" if cs else ""))

@@ -73,6 +73,13 @@ def main() -> None:
     x.add_argument("--battery", default="runs/battery,runs/battery-gemini")
     x.add_argument("--coding", default="runs/notes-coding")
     x.add_argument("--out", default="results/e1")
+    a = sub.add_parser("after-repair")
+    a.add_argument("--configs", default="configs/e1-v2.yaml,configs/e1-v2-ow.yaml,configs/e1-v2-mitigation.yaml")
+    a.add_argument("--coding", default="runs/v2/notes-coding/codes-deepseek-v4-flash.jsonl,"
+                                       "runs/v2/notes-coding-mitigation/codes-deepseek-v4-flash.jsonl")
+    a.add_argument("--repair", default="runs/v2/notes-coding/repair-deepseek-v4-flash.jsonl,runs/v2/notes-coding/repair-second.jsonl")
+    a.add_argument("--after", type=int, default=4)
+    a.add_argument("--public")
     x = sub.add_parser("export-records")
     x.add_argument("--configs", default=",".join(f"configs/{name}.yaml" for name in (
         "e1-v2", "e1-v2-ow", "e1-v2-effect", "e1-v2-effect-ow", "e1-v2-nogf", "e1-v2-hygiene", "e1-v2-mitigation", "e1")))
@@ -154,9 +161,13 @@ def main() -> None:
         for folder in args.explore.split(",") if args.explore else ():
             print("\n".join([f"probe folder {folder}"] + family.probe_groups(Path(folder))))
         return
-    if args.cmd in ("export-tables", "export-records", "hand-bundle"):
+    if args.cmd in ("after-repair", "export-tables", "export-records", "hand-bundle"):
         cfgs = [yaml.safe_load(Path(p).read_text()) for p in args.configs.split(",")]
-        if args.cmd == "hand-bundle":
+        if args.cmd == "after-repair":
+            rows = export.session_rows(cfgs, Path(args.public) if args.public else None)
+            coding, repair = ([Path(p) for p in files.split(",") if p] for files in (args.coding, args.repair))
+            print("\n".join(behavior.after_repair(rows, coding, repair, args.after)))
+        elif args.cmd == "hand-bundle":
             print(json.dumps(notes_coding.bundle(cfgs, Path(args.out), args.n, args.seed)))
         elif args.cmd == "export-records":
             folders = {kind: [Path(p) for p in getattr(args, kind).split(",") if p] for kind in export.KEPT}

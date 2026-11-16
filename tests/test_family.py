@@ -195,6 +195,9 @@ def test_probe_groups_compare_each_notes_source_with_the_control_arm_of_its_shif
 def test_probe_groups_need_every_reply_and_skip_a_reader_that_failed_its_anchors(tmp_path):
     part = family.probe_groups(_probe(tmp_path / "a", skip="A4-2-1-gemini-pro-flex"))
     assert part[-1] == "probe table is incomplete: 47 replies on 6 files"
+    table = tmp_path / "a" / "responses.jsonl"
+    table.write_text("".join(line + "\n" for line in table.read_text().splitlines() if "A4-2-0-gemini-pro-flex" not in line))
+    assert family.probe_groups(tmp_path / "a")[-1] == "probe table is incomplete: 46 replies on 6 files"
     failed = family.probe_groups(_probe(tmp_path / "b", claude=80))
     assert not any(line.startswith("  claude-sonnet-5") for line in failed)
     assert any(line.startswith("  gemini-pro-flex A1@4 - A4@4") for line in failed)

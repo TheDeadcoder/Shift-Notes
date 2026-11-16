@@ -222,9 +222,10 @@ def _level(rows: list[dict], reader: str, group: tuple, value) -> dict:
 def probe_groups(folder: Path) -> list[str]:
     chain, lines, passed = _probe_rows(folder)
     files = Counter((r["reader"], _source(r), r["lineage"]) for r in chain)
-    if any(n != knowledge.SAMPLES for (reader, _, _), n in files.items() if reader in passed):
-        return lines + [f"probe table is incomplete: {len(chain)} replies on {len({k[1:] for k in files})} files"]
-    groups = sorted({k[1] for k in files})
+    held = {k[1:] for k in files}
+    if any(files[(reader, *file)] != knowledge.SAMPLES for reader in passed for file in held):
+        return lines + [f"probe table is incomplete: {len(chain)} replies on {len(held)} files"]
+    groups = sorted({group for group, _ in held})
     if not groups:
         return lines
     measures = {"score": lambda r: r["score"], "stale": _excess, "blocked": lambda r: r["category_means"]["repaired_benign"],

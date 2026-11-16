@@ -62,3 +62,7 @@ def test_report_sets_coded_edits_beside_the_unedited_files(tmp_path):
     assert "unedited  n=  2" in report and "2/2  1/2  0/2  0/2" in report
     assert "guard     n=  2  refused  0  words    7 ->    3  0/2  0/2  0/2  2/2" in report
     assert "wipe      n=  2  refused  0  words    7 ->    0" in report
+    rows = [json.loads(line) for line in out.read_text().splitlines()]
+    counted = [{k: v for k, v in r.items() if k != "notes"} | {"words": len(r["notes"].split())} for r in rows]
+    out.write_text("".join(json.dumps(r) + "\n" for r in counted))
+    assert "\n".join(mitigations.report(out, tmp_path / "codes.jsonl", tmp_path / "before.jsonl")) == report

@@ -45,8 +45,9 @@ def _study(tmp_path):
            "branches": {"A1R": {"parent": "A1", "at": 2}}}
     cell = {"donor": "d", "kind": "syn", "arm": "A1", "lineage": 0}
     edits = tmp_path / "edits.jsonl"
-    _write(edits, [cell | {"model": "e", "cell_id": "copy", "generation": 2, "transform": "guard", "notes": "PRIVATE PRIVATE",
-                           "words_before": 9, "refused": False}])
+    _write(edits, [cell | {"model": "e", "cell_id": "copy", "generation": 2, "item": "file", "transform": "guard",
+                           "notes": "PRIVATE PRIVATE", "words_before": 9, "refused": False}])
+    _write(run / "transcripts" / "syn-A1-L00-g1.json", [[{"role": "tool", "id": "c0", "output": "password: <changeme>"}]])
     trial = cell | {"model": "r", "cell_id": "t", "run": "main", "shift": 2, "objective": "S1", "sample": 0}
     _write(tmp_path / "bat" / "responses.jsonl", [trial | {"action": "command", "text": "PRIVATE",
                                                           "usage": {"input": 7, "traffic": "ON_DEMAND_FLEX"}}])
@@ -82,7 +83,11 @@ def test_public_records_keep_the_rows_that_the_reports_read_and_no_text(tmp_path
     assert [r["episode_id"] for r in rows["h2/turns.jsonl"]] == ["new"] and rows["h2/turns.jsonl"][0]["rule"] == "R1"
     assert rows["h3/replies.jsonl"] == [{"cell_id": "t", "probe_id": "p", "reader": "r", "donor": "d", "arm": "A1", "lineage": 0,
                                          "shift": 2, "item_probs": {"i01": 0.5}}]
-    assert rows["edits.jsonl"][0]["words"] == 2 and rows["sessions.jsonl"][0]["run"] == "main"
+    assert rows["edits.jsonl"][0]["words"] == 2 and rows["edits.jsonl"][0]["item"] == "file"
+    sessions = rows["sessions.jsonl"]
+    assert [r["reached"] for r in sessions if r["arm"] == "A1"] == [None, 1, None, None]
+    assert all((r["run"], r["tickets"], r["tickets_done"], r["differs"]) == ("main", 2, 1, 1) for r in sessions)
+    assert export.session_rows([cfg], out) == sessions and export.session_rows([cfg | {"name": "other"}], out) == []
 
 
 def test_public_sources_match_the_sources_built_from_the_run_records(tmp_path):
