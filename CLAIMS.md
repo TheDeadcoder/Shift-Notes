@@ -88,6 +88,13 @@ python -m swarmgate.e1 chain-report --public $P \
   --configs configs/e1-v2.yaml,configs/e1-v2-ow.yaml,configs/e1-v2-effect.yaml,configs/e1-v2-effect-ow.yaml
 ```
 
+**C10**, the hand-coded samples of the first and the second study:
+
+```bash
+python -m swarmgate.e1 hand-report --dir results/e1/hand-coding
+python -m swarmgate.e1 hand-report --dir $P/hand-coding
+```
+
 ## Replication
 
 | Claim | Hypothesis, status | Evidence | Where |
@@ -162,7 +169,13 @@ python -m swarmgate.e1 chain-report --public $P \
 
 ## Coding
 
+Three annotators coded samples by hand. Each worked from a bundle that holds the rubric and the notes text under shuffled ids, with no donor, arm, lineage or shift. Annotators 1 and 3 each coded the sample of the first study, and annotators 2 and 3 each coded the sample of the second. The sheets are kept as they were returned, and none is merged with another.
+
 | Claim | Hypothesis, status | Evidence | Where |
 |---|---|---|---|
 | The two coders agree on the codes that the tests use | section 7, reported | Recipe: agreement 0.94, kappa 0.88. Labelled: agreement 0.96, kappa 0.92. 1328 double-coded files | C6, `agreement` |
+| Each coder agrees with the hand codes on the labelled recipe, in a sample of the first study | section 7, reported | 60 files, 15 per donor and arm. Agreement and kappa on the labelled recipe: primary coder 0.98, 0.96 with either annotator; second coder 1.00, 1.00 with either; the two annotators with each other 1.00, 1.00. On recipe alone: primary coder 0.88 with kappa 0.75 and 0.76; second coder 0.98, 0.96; annotators 0.97, 0.93 | C10, first command, `labelled recipe`, `recipe` |
+| Blind to the arm, both annotators find a labelled recipe in files of over-blocked lineages only | section 7, reported | The same 60 files, either annotator: A1 19/30, A4 0/30 | C10, first command, `labelled recipe by arm` |
+| The same holds in a sample of the second study, which has files written after the repair | exploratory, unnamed | 42 files, 7 per donor and arm. Labelled recipe: primary coder 0.95, 0.90 and 0.93, 0.85; second coder 1.00, 1.00 and 0.98, 0.95; the two annotators with each other 0.98, 0.95. By arm, annotators 2 and 3: A1 13/14 and 12/14, A1R 12/14 and 12/14, A4 0/14 and 0/14 | C10, second command, `labelled recipe` |
+| Of the four codes that no test uses, one is not reliable between annotators, and the primary coder agrees poorly with the hand codes on two | section 7, reported, for the first sample; exploratory, unnamed, for the second | Kappa between the annotators, first then second sample: legitimate 0.10, 0.11; caveat 0.71, 0.95; negative 0.83, 0.76; rules 0.69, 0.85. Kappa of the primary coder with each annotator: negative 0.13 and 0.13, then 0.15 and 0.11; rules 0.23 and 0.21, then 0.23 and 0.17. Of the second coder: negative 1.00 and 0.83, then 0.90 and 0.76; rules 0.82 and 0.80, then 0.85 and 0.80 | C10, `legitimate`, `caveat`, `negative`, `rules` |
 | The tests on codes do not depend on which coder is primary | exploratory | Second coder as primary. H6: 15 SYN only, 1 effect only, p = 0.0003. H4c: A1R 18/24, A4 0/24 | C7, `H6`, `H4c` |
