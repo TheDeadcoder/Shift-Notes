@@ -39,13 +39,14 @@ def _print(summary: list[dict], term: list[dict]) -> None:
                 _fmt(s["attribution"]), _fmt(s["class_acc"]), _fmt(s["bits"])))
     for t in term:
         print(f"termination delay={t['delay']} mode={t['mode']:<13} extra_bits={t['extra_bits']:.3f}")
+    print("\n".join(analysis.overall(summary)))
 
 
 def main() -> None:
     load_dotenv()
     parser = argparse.ArgumentParser(prog="python -m swarmgate.e0")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    for name in ("trials", "ideal", "observe", "analyze", "models"):
+    for name in ("trials", "ideal", "observe", "analyze", "models", "export"):
         p = sub.add_parser(name)
         p.add_argument("--config", default="configs/e0.yaml")
         if name in ("observe", "models"):
@@ -53,6 +54,10 @@ def main() -> None:
         if name == "observe":
             p.add_argument("--limit", type=int)
             p.add_argument("--retry-refused", action="store_true")
+        if name == "analyze":
+            p.add_argument("--public")
+        if name == "export":
+            p.add_argument("--out", default="results/e0")
     args = parser.parse_args()
     cfg, observers = _load(args.config)
 
@@ -61,9 +66,21 @@ def main() -> None:
         return
 
     run_dir = Path("runs") / "e0" / cfg["name"]
-    run_dir.mkdir(parents=True, exist_ok=True)
+    if args.cmd == "export":
+        path = Path(args.out) / cfg["name"] / "responses.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        rows = analysis.public(observer.load_responses(run_dir / "responses.jsonl"))
+        path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+        print(f"{len(rows)} answers in {path}")
+        return
+
+    public = Path(args.public) / cfg["name"] if getattr(args, "public", None) else None
     ideal = Ideal(cfg["env_error_rate"], cfg["reveal_rate"])
-    trials = _trials(cfg, ideal, run_dir)
+    if public:
+        trials = build(cfg, ideal)
+    else:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        trials = _trials(cfg, ideal, run_dir)
 
     if args.cmd == "trials":
         print(f"{len(trials)} trials in {run_dir / 'trials.jsonl'}")
@@ -78,16 +95,17 @@ def main() -> None:
         rows = analysis.score_ideal(ideal, trials)
         if args.cmd == "analyze":
             by_id = {t["trial_id"]: t for t in trials}
-            responses = [r for r in observer.load_responses(run_dir / "responses.jsonl")
+            responses = [r for r in observer.load_responses((public or run_dir) / "responses.jsonl")
                          if r["trial_id"] in by_id and observer.in_scope(observers.get(r["observer"], {}), by_id[r["trial_id"]])]
             rows += analysis.score_observers(trials, responses)
         summary = analysis.aggregate(rows, cfg["modes"], cfg["bootstrap"], cfg["seed"])
-        prefix = "ideal_" if args.cmd == "ideal" else ""
-        analysis.write_csv(rows, run_dir / f"{prefix}scores.csv")
-        analysis.write_csv(summary, run_dir / f"{prefix}summary.csv")
         term = analysis.termination(cfg, ideal, trials)
-        analysis.write_csv(term, run_dir / "termination.csv")
-        analysis.figures(summary, cfg["modes"], run_dir / "figures")
+        if not public:
+            prefix = "ideal_" if args.cmd == "ideal" else ""
+            analysis.write_csv(rows, run_dir / f"{prefix}scores.csv")
+            analysis.write_csv(summary, run_dir / f"{prefix}summary.csv")
+            analysis.write_csv(term, run_dir / "termination.csv")
+            analysis.figures(summary, cfg["modes"], run_dir / "figures")
         _print(summary, term)
         for name in sorted({r["observer"] for r in rows if "parsed" in r}):
             rs = [r for r in rows if r["observer"] == name]

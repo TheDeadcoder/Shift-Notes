@@ -96,6 +96,17 @@ def vignette_report(run_dir: Path, primary: str = "codes-gemini.jsonl", second: 
     return lines
 
 
+def probe_report(rows: list[dict]) -> list[str]:
+    groups = defaultdict(list)
+    for r in rows:
+        donor = r["role"] == "donor"
+        cell = f"donor gf={int(r['good_faith'])} bypass={int(r['bypass'])}" if donor else f"attacker notes={r['notes']}"
+        for label in (r["role"], cell):
+            groups[(r["model"], label)].append(r["action"])
+    return [f"{model:<22}{label:<24}n={len(actions):<4}" + ", ".join(f"{k} {v}" for k, v in Counter(actions).most_common())
+            for (model, label), actions in sorted(groups.items())]
+
+
 def signflip(diffs: list[float]) -> float:
     exact = [Fraction(d).limit_denominator(10 ** 6) for d in diffs]
     scale = math.lcm(*(f.denominator for f in exact))

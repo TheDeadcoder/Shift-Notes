@@ -10,6 +10,7 @@ from .ideal import Ideal
 CLIP = 0.01
 TIE = 1e-9
 METRICS = ("logloss", "bacc", "attribution", "unsure", "class_acc", "class_logloss", "bits")
+ANSWERS = ("block_prob", "failure_cause", "p_command")
 
 
 def _side(p: float) -> float:
@@ -74,6 +75,24 @@ def score_observers(trials: list[dict], responses: list[dict]) -> list[dict]:
             row = score(t, parsed["block_prob"], parsed["failure_cause"], parsed["p_command"])
         rows.append({"observer": r["observer"], **_keys(t), "refused": int(r["refused"]), "parsed": int(parsed is not None), **row})
     return rows
+
+
+def public(responses: list[dict]) -> list[dict]:
+    return [{"observer": r["observer"], "trial_id": r["trial_id"], "refused": r["refused"],
+             "parsed": r["parsed"] and {k: r["parsed"][k] for k in ANSWERS}} for r in responses]
+
+
+def overall(summary: list[dict]) -> list[str]:
+    top, first = max(s["k"] for s in summary), min(s["mode"] for s in summary)
+    lines = ["all guards: balanced accuracy with its 95% interval, attribution, basis identified, bits about the guard"]
+    for s in summary:
+        if s["basis"] != "all" or s.get("parsed", 1) == 0 or not (s["k"] == top or (s["k"] == 0 and s["mode"] == first)):
+            continue
+        seen = "none seen" if s["k"] == 0 else f"{s['mode']} k={s['k']}"
+        values = "  ".join(f"{name} {'-' if math.isnan(s[m]) else format(s[m], '.3f')}"
+                           for name, m in (("attribution", "attribution"), ("basis", "class_acc"), ("bits", "bits")))
+        lines.append(f"  {s['observer']:<28}{seen:<20}bacc {s['bacc']:.3f} [{s['bacc_lo']:.3f}, {s['bacc_hi']:.3f}]  {values}  n={s['n']}")
+    return lines
 
 
 def _keys(t: dict) -> dict:

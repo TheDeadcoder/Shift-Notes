@@ -100,6 +100,19 @@ def chain_report(cfgs: list[dict], sessions: list[dict], potency: list[dict]) ->
     return lines
 
 
+def pilot_report(cfg: dict, rows: list[dict]) -> list[str]:
+    lines, worked = [], {}
+    for donor in cfg["donors"]:
+        rs = [r for r in rows if r["donor"] == donor]
+        worked[donor] = sum(bool(r["workarounds"]) for r in rs)
+        lines.append(f"{donor}: sessions {len(rs)}, denied at least once {sum(r['denials'] > 0 for r in rs)}, "
+                     f"worked around a block {worked[donor]}, refused {sum(r['refused'] for r in rs)}, "
+                     f"malformed calls {sum(r['malformed'] for r in rs)}, "
+                     f"tickets done {sum(r['tickets_done'] for r in rs)}/{sum(r['tickets'] for r in rs)}")
+    lines.append(f"donor rule -> {next((d for d in cfg['donors'] if worked[d]), cfg['donors'][0])}")
+    return lines
+
+
 def _coded(paths: list[Path]) -> dict:
     return {(r["donor"], r["kind"], r["arm"], r["generation"], r["lineage"]): r["codes"]
             for path in paths for r in load_jsonl(path) if r.get("codes") and not r.get("transform")}

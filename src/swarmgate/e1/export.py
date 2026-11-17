@@ -4,13 +4,14 @@ from collections import defaultdict
 from pathlib import Path
 
 from ..e0.observer import load_jsonl
-from . import battery, family, knowledge
+from . import battery, family, knowledge, probe
 from .behavior import DENIAL, ROUTE, route
 from .chains import records, refused
 from .notes_coding import FLAGS
 from .potency import OBJECTIVES
 
 SESSIONS, POTENCY, EDITS = "sessions.jsonl", "potency.jsonl", "edits.jsonl"
+PROBE, VIGNETTES, PILOTS = "probe/responses.jsonl", "vignettes", "pilots.jsonl"
 CELL = ("model", "cell_id", "donor", "kind", "arm", "lineage", "run", "shift", "generation", "transform", "objective", "sample")
 RUN = ("cell_id", "allowed", "success")
 KEPT = {
@@ -24,6 +25,9 @@ KEPT = {
               knowledge.REPLY_LOG: ("cell_id", "probe_id", "reader", "donor", "arm", "lineage", "shift", "transform", "item_probs")},
 }
 LOGS = {family.TURNS: "episode_id", knowledge.REPLY_LOG: "probe_id"}
+EARLY = {"probe": ("model", "cell_id", "role", "good_faith", "denials", "bypass", "objective", "notes", "sample", "refused"),
+         "responses": ("model", "cell_id", "good_faith", "resolution", "sample", "refused"),
+         "codes": ("model", "cell_id", "source_model", "resolution", "good_faith", "codes", "refused")}
 
 
 def _write(path: Path, rows: list[dict]) -> int:
@@ -132,6 +136,23 @@ def public(cfgs: list[dict], out: Path, folders: dict[str, list[Path]], edits: P
     counts = {"sessions": _dump(out / SESSIONS, sessions), "potency": _dump(out / POTENCY, potency),
               "edits": _dump(out / EDITS, copies)}
     return counts | {kind: sum(_folder(f, out, KEPT[kind]) for f in found) for kind, found in folders.items()}
+
+
+def pilot_rows(cfg: dict, folder: Path | None = None) -> list[dict]:
+    if folder:
+        return [r for r in load_jsonl(folder / PILOTS) if r["run"] == cfg["name"]]
+    return [{"run": cfg["name"], **_session(cfg | {"donor": donor}, r), "tickets": len(r["checks"])}
+            for donor in cfg["donors"] for r in records(Path(cfg["out"]) / donor)]
+
+
+def early(replies: Path, vignettes: Path, pilots: list[dict], out: Path) -> dict:
+    latest = {(r["model"], r["cell_id"]): r for r in load_jsonl(replies)}.values()
+    labelled = [{k: r[k] for k in EARLY["probe"] if k in r} | {"action": probe.rescore(r)} for r in latest]
+    counts = {"probe": _dump(out / PROBE, labelled)}
+    for path in sorted(p for p in vignettes.glob("*.jsonl") if not p.stem.endswith("-errors")):
+        keys = EARLY["responses" if path.name == "responses.jsonl" else "codes"]
+        counts[path.stem] = _dump(out / VIGNETTES / path.name, [{k: r[k] for k in keys if k in r} for r in load_jsonl(path)])
+    return counts | {"pilots": _dump(out / PILOTS, [r for cfg in pilots for r in pilot_rows(cfg)])}
 
 
 def hand(folder: Path, out: Path, coder_files: list[Path]) -> dict:

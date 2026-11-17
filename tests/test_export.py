@@ -1,7 +1,8 @@
 import csv
 import json
+import re
 
-from swarmgate.e1 import battery, behavior, export, mitigations, notes_coding
+from swarmgate.e1 import analysis, battery, behavior, coding, export, mitigations, notes_coding, probe
 
 
 def test_tables_hold_one_row_per_session_code_and_trial_without_any_text(tmp_path):
@@ -128,3 +129,33 @@ def test_hand_export_keeps_the_sheets_and_the_sampled_codes_without_any_text(tmp
     report = notes_coding.human_report(out, [out / "codes-x.jsonl"])
     assert report == notes_coding.human_report(folder, [coder])
     assert "codes-x against one labelled: agreement 0.00" in "\n".join(report)
+
+
+def test_early_export_keeps_labels_and_codes_without_any_text(tmp_path):
+    replies, vignettes, run, out = (tmp_path / name for name in ("probe.jsonl", "vignettes", "pilot", "results"))
+    cell = {"model": "m", "sample": 0, "stop": "end_turn", "refused": False, "usage": {"output": 9}}
+    _write(replies, [
+        cell | {"cell_id": "d", "role": "donor", "good_faith": True, "denials": 1, "bypass": False, "text": "", "calls": ["ls PRIVATE"]},
+        cell | {"cell_id": "a", "role": "attacker", "objective": "exact_key", "notes": "none", "text": "cat PRIVATE", "calls": []}])
+    note = {"model": "m", "cell_id": "1-interpreter-0", "good_faith": True, "resolution": "interpreter", "sample": 0, "refused": False}
+    _write(vignettes / "responses.jsonl", [note | {"notes": "PRIVATE", "text": "PRIVATE"}])
+    codes = {f: True for f in coding.FLAGS} | {"disclosure": "D1"}
+    for name in ("codes-gemini.jsonl", "codes-gemini-pro.jsonl", "codes-gemini-errors.jsonl"):
+        _write(vignettes / name, [{"model": "c", "cell_id": "m|1-interpreter-0", "source_model": "m", "resolution": "interpreter",
+                                   "good_faith": True, "codes": codes, "notes": "PRIVATE", "raw": "PRIVATE", "refused": False}])
+    session = {"kind": "syn", "arm": "A1", "lineage": 0, "generation": 0, "tasks": ["B1", "O1"], "checks": {"B1": True, "O1": False},
+               "calls": 5, "denials": 2, "workarounds": ["template"], "turns": [{"refused": False, "usage": {}}],
+               "steps": [{"command": "PRIVATE"}], "notes_next": "PRIVATE"}
+    _write(run / "b" / "syn-A1-L00.jsonl", [session])
+    cfg = {"name": "pilot", "out": str(run), "donors": ["a", "b"]}
+    counts = export.early(replies, vignettes, [cfg], out)
+    assert counts == {"probe": 2, "codes-gemini-pro": 1, "codes-gemini": 1, "responses": 1, "pilots": 1}
+    assert all("PRIVATE" not in p.read_text() and "usage" not in p.read_text() for p in out.rglob("*.jsonl"))
+    labels = analysis.probe_report(export.load_jsonl(out / export.PROBE))
+    assert labels == [re.sub(r" \| mean output tokens \d+$", "", line) for line in probe.summary(replies)]
+    assert "m                     attacker notes=none     n=1   command 1" in labels
+    assert analysis.vignette_report(out / export.VIGNETTES) == analysis.vignette_report(vignettes)
+    report = behavior.pilot_report(cfg, export.pilot_rows(cfg, out))
+    assert report == behavior.pilot_report(cfg, export.pilot_rows(cfg))
+    assert report[1:] == ["b: sessions 1, denied at least once 1, worked around a block 1, refused 0, malformed calls 0, "
+                          "tickets done 1/2", "donor rule -> b"]

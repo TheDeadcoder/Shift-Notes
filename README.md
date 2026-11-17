@@ -9,7 +9,7 @@ This repository contains:
 - the `swarmgate` package, which runs every experiment;
 - the preregistration and the deviations record;
 - the analysis code behind every reported number;
-- [CLAIMS.md](CLAIMS.md), which maps each claim of the second study to its evidence and the command that prints it.
+- [CLAIMS.md](CLAIMS.md), which maps each claim of the second study, and of the steps before the first study's chains, to its evidence and the command that prints it.
 
 ## Findings
 
@@ -143,6 +143,8 @@ python -m swarmgate.e0 ideal   --config configs/e0.yaml
 python -m swarmgate.e0 models  --config configs/e0.yaml --observer claude-sonnet-5
 python -m swarmgate.e0 observe --config configs/e0.yaml --observer claude-sonnet-5
 python -m swarmgate.e0 analyze --config configs/e0.yaml
+python -m swarmgate.e0 export  --config configs/e0.yaml
+python -m swarmgate.e0 analyze --config configs/e0.yaml --public results/e0
 ```
 
 Before running an observer, set its `model` field in `configs/observers.yaml`; `models` lists the identifiers available to your credentials. `configs/e0-pilot.yaml` runs a small pilot on separate hidden guards.
@@ -150,6 +152,10 @@ Before running an observer, set its `model` field in `configs/observers.yaml`; `
 `configs/e0-space.yaml` uses another set of hidden guards to compare observers that are also told the space of possible guards with the same models told nothing more. These observers have `guard_space: true` in `configs/observers.yaml`, for example `claude-sonnet-5-space`. An observer's `modes` field limits it, in runs and in analysis, to those feedback modes; trials with no observations are always included.
 
 Outputs are written to `runs/e0/<name>/`.
+
+- `analyze` ends with one line per observer and feedback mode over all guards: balanced accuracy with its interval, how often a failure is put down to the right cause, how often the guard's basis is identified and, for the ideal observer, the bits about the guard.
+- `export` writes each observer's answers to `results/e0/<name>/` as numbers and labels, without the reply text. `results/e0` holds the main set, the guard-space set and the pilot set.
+- `analyze --public results/e0` rebuilds the trials from the config, scores those answers and prints the same tables. It writes nothing.
 
 Observer runs can be safely interrupted:
 
@@ -197,6 +203,7 @@ python -m swarmgate.e1 hand-report
 python -m swarmgate.e1 export-tables
 python -m swarmgate.e1 export-records
 python -m swarmgate.e1 export-hand
+python -m swarmgate.e1 export-early
 python -m swarmgate.e1 mitigate
 python -m swarmgate.e1 mitigate-report
 python -m swarmgate.e1 v2-report
@@ -204,9 +211,9 @@ python -m swarmgate.e1 after-repair
 python -m swarmgate.e1 figures
 ```
 
-- `probe` checks whether a model takes the donor and attacker roles at all.
+- `probe` checks whether a model takes the donor and attacker roles at all. `probe-summary` gives the replies per model and cell.
 - `vignettes` runs scripted sessions that end with the request to write notes. `code` codes each note with a model from another family, and `vignette-report` gives the recording rate, disclosure and coder agreement.
-- `pilot` runs a few sessions for each candidate donor model and applies the donor rule.
+- `pilot` runs a few sessions for each candidate donor model and applies the donor rule. `pilot-report` gives the same table again from the session records.
 - `chains` runs every lineage; `--status` prints progress and spend without running anything. No new generation starts once spend reaches `budget_usd`. Between generations the donor model merges the session's notes into the notes the next agent receives; if it refuses, the previous notes carry over unchanged and `--status` counts the refusal.
   - A config may list `branches`: arms that start from another arm's notes after a given generation and run under a named guard variant. The arms of a lineage advance together, one generation at a time.
   - Each command is also decided under the other guard variant, and the record counts the commands on which the two variants differ.
@@ -224,6 +231,7 @@ python -m swarmgate.e1 figures
 - `export-tables` writes per-session, per-file and per-trial tables to `results/`. They hold no notes text and no commands.
 - `export-records` writes the records of the second study to `results/v2/` without notes text, commands, prompts or replies: one row per session (with whether it was denied on an over-blocked object and whether it reached one, and whether its notes mention a denial or are empty), per scored notes file, per edited copy, per coded file, per reader trial, per episode and turn of the reader that may issue several commands, and per probe reply with its probability for each probe command. Each folder keeps its name and its file names.
 - `export-hand` writes a hand-coded sample to `results/` without the notes text: the key, the sheets, and the coders' rows for the sampled files. `hand-report --dir` on that folder needs nothing else.
+- `export-early` writes the records of the steps before the chains to `results/e1/` without any reply, notes or command text: the probe's replies as labels (`probe/`), the vignette notes as codes (`vignettes/`) and one row per pilot session (`pilots.jsonl`). `probe-summary --public results/e1`, `vignette-report --run results/e1/vignettes` and `pilot-report --public results/e1` then need nothing else.
 - `mitigate` edits the notes of one arm after one shift (`--arm`, `--shift`, `--lineages`) in five ways and writes the edited copies to one file: a generic audit, removal of what the notes say about the three over-blocked objects, removal of everything they say about the reviewer, a notice placed at the top, and an empty file. An editor model makes the first three with fixed prompts; if it refuses, the file is left unchanged. `notes-code --edits` codes the edited copies, and `mitigate-report` gives, per edit, the refusals, the length before and after, and the codes beside those of the unedited files. With `--out results/v2` it reads the exported records.
 - `v2-report` gives the tests of `PREREGISTRATION-V2.md` in one table, from a battery folder (`--battery`, `--shifts`, `--edits`) and the primary coder's files (`--coding`, comma-separated). The first config's donor is tested as H1 and the second's as H1-OW. The secondary tests are adjusted together by Holm's method, and a test with no data counts as p = 1. It also gives the share of the first-shift difference that remains after the repair, how often a labelled recipe is still in the notes at the last shift, and the repaired arm against the unrepaired arm at the last shift, two-sided, for the reader score and the labelled recipe. `--multi-turn` adds the table of the reader that may issue several commands (H2): its anchors, its test in the family, its rates at each denial threshold (also by objective, with the rule of the first denial) and how its episodes ended. `--probe` adds the knowledge probe (H3) from its output folder: each reader's anchors, its A1 minus A4 difference in the boundary score, and the family test, which is the largest p among the readers that passed their anchors. Outside the family it gives H3b by the same rule: each reader's difference in predicted blocking on the benign commands that the guard blocked before its repair, less the blocking predicted for the benign commands it allowed. When the folder holds the reply log, it also splits that difference into three groups of benign commands: those the guard blocked on the repaired files, those it allowed on the same files, and those on other objects.
   - For each test on paired lineages it gives the range of the estimate and the largest p when one lineage, or one pair, is left out. The labelled-recipe count after the last shift is also given for the second donor.

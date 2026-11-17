@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from swarmgate.e0 import observer
+from swarmgate.e0 import analysis, observer
 from swarmgate.e0.analysis import score
 
 TRIAL = {
@@ -120,3 +120,15 @@ def test_observer_modes_limit_the_trials(tmp_path):
 def test_score_of_a_perfect_observer():
     s = score(TRIAL, {"q1": 1.0, "q2": 0.0}, {"1": "reviewer"}, 1.0)
     assert s["bacc"] == 1.0 and s["attribution"] == 1.0 and s["class_acc"] == 1.0
+
+
+def test_public_answers_hold_no_text_and_score_the_same():
+    answer = {"block_prob": {"q1": 0.9, "q2": 0.2}, "failure_cause": {"1": "reviewer"}, "p_command": 0.7, "rule": "PRIVATE"}
+    meta = {"usage": {"output": 9}}
+    responses = [{"observer": "x", "trial_id": "t", "text": "PRIVATE", "refused": False, "meta": meta, "parsed": answer},
+                 {"observer": "y", "trial_id": "t", "text": "", "refused": True, "meta": {}, "parsed": None}]
+    rows = json.loads(json.dumps(analysis.public(responses)))
+    assert "PRIVATE" not in json.dumps(rows) and all(set(r) == {"observer", "trial_id", "refused", "parsed"} for r in rows)
+    assert json.dumps(analysis.score_observers([TRIAL], rows)) == json.dumps(analysis.score_observers([TRIAL], responses))
+    summary = analysis.aggregate(analysis.score_observers([TRIAL], rows), ["generic"], 10, 0)
+    assert analysis.overall(summary)[1].split("bacc")[0].split() == ["x", "generic", "k=2"]

@@ -5,6 +5,7 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 
+from ..e0.observer import load_jsonl
 from ..sandbox.container import Container
 from . import (analysis, battery, behavior, calibration, chains, coding, export, family, figures, mitigations, notes_coding,
                potency, probe, robustness, vignettes)
@@ -22,6 +23,7 @@ def main() -> None:
     p.add_argument("--out", default="runs/probe/responses.jsonl")
     s = sub.add_parser("probe-summary")
     s.add_argument("--out", default="runs/probe/responses.jsonl")
+    s.add_argument("--public")
     v = sub.add_parser("vignettes")
     v.add_argument("--models", required=True)
     v.add_argument("--samples", type=int, default=30)
@@ -106,6 +108,14 @@ def main() -> None:
     h = sub.add_parser("hand-report")
     h.add_argument("--dir", default="runs/hand-coding")
     h.add_argument("--coders")
+    r = sub.add_parser("pilot-report")
+    r.add_argument("--config", required=True)
+    r.add_argument("--public")
+    x = sub.add_parser("export-early")
+    x.add_argument("--probe", default="runs/probe/responses.jsonl")
+    x.add_argument("--vignettes", default="runs/vignettes")
+    x.add_argument("--pilots", default="configs/e1-pilot.yaml,configs/e1-pilot-ow.yaml")
+    x.add_argument("--out", default="results/e1")
     x = sub.add_parser("export-hand")
     x.add_argument("--dir", default="runs/hand-coding")
     x.add_argument("--coders", default="runs/notes-coding/codes-deepseek-v4-flash.jsonl,runs/notes-coding/codes-gemini.jsonl")
@@ -144,6 +154,17 @@ def main() -> None:
     args = parser.parse_args()
     if args.cmd == "vignette-report":
         print("\n".join(analysis.vignette_report(Path(args.run))))
+        return
+    if args.cmd == "probe-summary" and args.public:
+        print("\n".join(analysis.probe_report(load_jsonl(Path(args.public) / export.PROBE))))
+        return
+    if args.cmd == "pilot-report":
+        cfg = yaml.safe_load(Path(args.config).read_text())
+        print("\n".join(behavior.pilot_report(cfg, export.pilot_rows(cfg, Path(args.public) if args.public else None))))
+        return
+    if args.cmd == "export-early":
+        pilots = [yaml.safe_load(Path(p).read_text()) for p in args.pilots.split(",")]
+        print(json.dumps(export.early(Path(args.probe), Path(args.vignettes), pilots, Path(args.out))))
         return
     if args.cmd in ("hand-report", "export-hand"):
         folder = Path(args.dir)
