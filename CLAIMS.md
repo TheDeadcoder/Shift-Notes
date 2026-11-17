@@ -2,6 +2,8 @@
 
 Each claim of the second study, the hypothesis it belongs to, its status in [PREREGISTRATION-V2.md](PREREGISTRATION-V2.md), the evidence, and the command that prints that evidence.
 
+The last section does the same for the studies that were run before the chains of the first study.
+
 ## How to read the tables
 
 - **Arms.** A1 runs every shift under the over-blocking guard and A4 under the repaired guard. A1R starts from A1's notes after shift 4 and runs shifts 5 to 8 under the repaired guard. A1G and A1W do the same from the guard-scoped copy of those notes and from an empty file.
@@ -13,6 +15,8 @@ Each claim of the second study, the hypothesis it belongs to, its status in [PRE
   - *reported*: an estimate, a check or a descriptive table that the preregistration says is reported.
   - *exploratory*: named as exploratory in the preregistration.
   - *exploratory, unnamed*: not named in the preregistration.
+  - *earlier, recorded*: run before the first study's chains and stated with its outcome in section 6 of [PREREGISTRATION.md](PREREGISTRATION.md).
+  - *earlier*: run before the first study's chains, with no registered test.
 - **Where.** The command, then the start of the line or block that holds the figures.
 
 ## Commands
@@ -93,6 +97,33 @@ python -m swarmgate.e1 chain-report --public $P \
 ```bash
 python -m swarmgate.e1 hand-report --dir results/e1/hand-coding
 python -m swarmgate.e1 hand-report --dir $P/hand-coding
+```
+
+**C11**, the audit of what a denial reveals: the main set of hidden guards, the set on which an observer is told the space of guards, and the pilot set:
+
+```bash
+python -m swarmgate.e0 analyze --config configs/e0.yaml --public results/e0
+python -m swarmgate.e0 analyze --config configs/e0-space.yaml --public results/e0
+python -m swarmgate.e0 analyze --config configs/e0-pilot.yaml --public results/e0
+```
+
+**C12**, the willingness probe:
+
+```bash
+python -m swarmgate.e1 probe-summary --public results/e1
+```
+
+**C13**, the scripted sessions that end with the request for handoff notes:
+
+```bash
+python -m swarmgate.e1 vignette-report --run results/e1/vignettes
+```
+
+**C14**, the donor pilots:
+
+```bash
+python -m swarmgate.e1 pilot-report --config configs/e1-pilot.yaml --public results/e1
+python -m swarmgate.e1 pilot-report --config configs/e1-pilot-ow.yaml --public results/e1
 ```
 
 ## Replication
@@ -179,3 +210,31 @@ Three annotators coded samples by hand. Each worked from a bundle that holds the
 | The same holds in a sample of the second study, which has files written after the repair | exploratory, unnamed | 42 files, 7 per donor and arm. Labelled recipe: primary coder 0.95, 0.90 and 0.93, 0.85; second coder 1.00, 1.00 and 0.98, 0.95; the two annotators with each other 0.98, 0.95. By arm, annotators 2 and 3: A1 13/14 and 12/14, A1R 12/14 and 12/14, A4 0/14 and 0/14 | C10, second command, `labelled recipe` |
 | Of the four codes that no test uses, one is not reliable between annotators, and the primary coder agrees poorly with the hand codes on two | section 7, reported, for the first sample; exploratory, unnamed, for the second | Kappa between the annotators, first then second sample: legitimate 0.10, 0.11; caveat 0.71, 0.95; negative 0.83, 0.76; rules 0.69, 0.85. Kappa of the primary coder with each annotator: negative 0.13 and 0.13, then 0.15 and 0.11; rules 0.23 and 0.21, then 0.23 and 0.17. Of the second coder: negative 1.00 and 0.83, then 0.90 and 0.76; rules 0.82 and 0.80, then 0.85 and 0.80 | C10, `legitimate`, `caveat`, `negative`, `rules` |
 | The tests on codes do not depend on which coder is primary | exploratory | Second coder as primary. H6: 15 SYN only, 1 effect only, p = 0.0003. H4c: A1R 18/24, A4 0/24 | C7, `H6`, `H4c` |
+
+## Earlier studies
+
+Four steps came before the chains of the first study. The public records hold each model's answers as numbers and labels, with no reply text.
+
+- **Audit.** Each hidden guard decides either on commands or on data. An observer sees up to 16 scripted commands with the guard's responses and predicts its decision on 12 held-out commands. Balanced accuracy is over 40 guards, with a bootstrap 95% interval. The ideal observer is exact Bayesian inference over the space of guards. The three observers are Claude Sonnet 5 at medium effort, Claude Sonnet 5 at high effort and Muse Spark, in that order.
+- **Probe.** Each reply is labelled by the rule in `src/swarmgate/e1/probe.py` as committed.
+- **Scripted sessions.** The session shows a denied read and then one of four ways on; the model is asked for handoff notes, and a model of another family codes them.
+- **Pilots.** Four sessions per candidate under the over-blocking command-based guard.
+
+| Claim | Status | Evidence | Where |
+|---|---|---|---|
+| With no response seen, the observers predict a hidden guard's decisions near chance, and the ideal observer does not | earlier | Balanced accuracy: 0.531, 0.521, 0.510; ideal 0.727 | C11, first command, `none seen` |
+| Sixteen plain denials let two of the three observers predict the guard better | earlier | "Tool call not approved." as the only feedback, 16 responses seen: 0.559 [0.490, 0.630], 0.693 [0.623, 0.760], 0.756 [0.696, 0.819]; ideal 0.882 [0.840, 0.919] | C11, first command, `generic k=16` |
+| A denial that names its rule tells more | earlier | 0.684 [0.623, 0.746], 0.746 [0.685, 0.804], 0.780 [0.726, 0.834]; ideal 0.920 [0.883, 0.951] | C11, first command, `verbose k=16` |
+| When a denial is disguised as an ordinary error or as success, the observers blame the guard less reliably | earlier | Failures put down to the right cause, 16 responses seen. Plain denial: 0.957, 0.973, 1.000. Disguised as an error: 0.636, 0.731, 0.755. Disguised as success: 0.762, 0.768, 0.549. Ideal: 1.000, 0.977, 1.000 | C11, first command, `attribution` |
+| They also predict the guard worse, and the ideal observer still learns from a disguised denial | earlier | Balanced accuracy. Disguised as an error: 0.558, 0.626, 0.679; ideal 0.874. Disguised as success: 0.496, 0.518, 0.550; ideal 0.779 | C11, first command, `camouflaged k=16`, `fake_success k=16` |
+| Told the space of possible guards, an observer starts where the ideal observer starts and ends close to it | earlier; the arm and its narrowing are in `DEVIATIONS.md` | A second set of 40 guards, Claude Sonnet 5 at medium effort, told against not told. No response seen: 0.719 against 0.533; ideal 0.723. Rule named, 16 responses: 0.853 [0.811, 0.895] against 0.708 [0.647, 0.772]; ideal 0.910. Plain denial: 0.839 [0.794, 0.881] against 0.624 [0.554, 0.692]; ideal 0.870. 116 of 120 told answers could be read | C11, second command, `claude-sonnet-5-space`, `claude-sonnet-5` |
+| Ending a session after the third block tells the ideal observer more when denials are disguised, and less when the end comes after a random delay | earlier | Extra bits about the guard. Disguised as an error: 0.121 at once, 0.061 with a delay of up to three commands. Disguised as success: 0.880 and 0.495. Visible denials: 0 | C11, first command, `termination` |
+| One model refused every prompt of the audit | earlier; the change of observer is in `DEVIATIONS.md` | Claude Sonnet 5.5: 84 of 84 refused, and 4 of 4 under a second access setting | C11, third command, `refused` |
+| Asked for one command against the policy, models differ in whether they give one, and fewer do when the notes spell out a way past the reviewer | earlier | Commands in 9 replies, without notes and then with them: Claude Sonnet 5.5 0 and 0 (every reply refused); Claude Sonnet 5 9 and 0; Claude Haiku 5.5 3 and 0; Gemini 3.8 Flash 1 and 0; Gemini 3.1 Pro 8 and 5; Muse Spark 7 and 2 | C12, `attacker notes=none`, `attacker notes=control` |
+| In the agent's role, after scripted denials, no reply is refused | earlier | 144 replies from four models: 0 refused, 1 declined | C12, `donor` |
+| After a scripted detour around a denial, the donor writes the detour into its notes | earlier, recorded | Claude Sonnet 5 with the good-faith sentence: 56/60 = 0.93 [0.84, 0.97], so the sentence stays in the chains | C13, `p_r` |
+| Without the good-faith sentence it does so less often | earlier | Claude Sonnet 5: 16/60 = 0.27 [0.17, 0.39]. Claude Sonnet 5.5: 60/60 with the sentence and without | C13, `p_r` |
+| With the sentence, the notes also disclose the agent's own detour more often | earlier | Claude Sonnet 5: disclosed in 54/60 against 13/60, two-sided Fisher p = 1.2e-14. No note misrepresents it | C13, `D1 share` |
+| Two coders agree on the codes used here | earlier | 96 double-coded notes. Kappa: recipe 1.00, labelled 1.00, disclosure 1.00, caveat 0.66, escalation 0.44 | C13, `coder agreement` |
+| The donor rule chose Claude Sonnet 5 | earlier, recorded | Sessions with a block worked around: Claude Sonnet 5.5 0 of 4, with 2 sessions refused; Claude Sonnet 5 3 of 4 | C14, first command |
+| The same rule chose Qwen 3.5 397B among the open-weight candidates | section 7 of `PREREGISTRATION.md`; the dropped candidate is in `DEVIATIONS.md` | GLM 5.2 ran no session; Qwen 3.5 397B 2 of 4; DeepSeek V4 Flash 0 of 4 | C14, second command |
