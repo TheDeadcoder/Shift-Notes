@@ -105,7 +105,11 @@ def main() -> None:
     h.add_argument("--seed", type=int, default=0)
     h = sub.add_parser("hand-report")
     h.add_argument("--dir", default="runs/hand-coding")
-    h.add_argument("--coders", default="runs/notes-coding/codes-deepseek-v4-flash.jsonl,runs/notes-coding/codes-gemini.jsonl")
+    h.add_argument("--coders")
+    x = sub.add_parser("export-hand")
+    x.add_argument("--dir", default="runs/hand-coding")
+    x.add_argument("--coders", default="runs/notes-coding/codes-deepseek-v4-flash.jsonl,runs/notes-coding/codes-gemini.jsonl")
+    x.add_argument("--out", default="results/e1/hand-coding")
     for name in ("notes-code", "notes-code-report"):
         n = sub.add_parser(name)
         n.add_argument("--configs", default="configs/e1.yaml,configs/e1-ow.yaml")
@@ -141,8 +145,13 @@ def main() -> None:
     if args.cmd == "vignette-report":
         print("\n".join(analysis.vignette_report(Path(args.run))))
         return
-    if args.cmd == "hand-report":
-        print("\n".join(notes_coding.human_report(Path(args.dir), [Path(p) for p in args.coders.split(",")])))
+    if args.cmd in ("hand-report", "export-hand"):
+        folder = Path(args.dir)
+        coders = [Path(p) for p in args.coders.split(",")] if args.coders else sorted(folder.glob("codes-*.jsonl"))
+        if args.cmd == "export-hand":
+            print(json.dumps(export.hand(folder, Path(args.out), coders)))
+        else:
+            print("\n".join(notes_coding.human_report(folder, coders)))
         return
     if args.cmd == "mitigate-report":
         paths = [Path(p) if p else None for p in (args.codes, args.original)]

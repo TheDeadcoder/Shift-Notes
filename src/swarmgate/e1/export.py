@@ -134,6 +134,17 @@ def public(cfgs: list[dict], out: Path, folders: dict[str, list[Path]], edits: P
     return counts | {kind: sum(_folder(f, out, KEPT[kind]) for f in found) for kind, found in folders.items()}
 
 
+def hand(folder: Path, out: Path, coder_files: list[Path]) -> dict:
+    sampled = {r["item"] for r in load_jsonl(folder / "key.jsonl")}
+    sheets = sorted(folder.glob("*.csv"))
+    out.mkdir(parents=True, exist_ok=True)
+    for path in (folder / "key.jsonl", *sheets):
+        (out / path.name).write_bytes(path.read_bytes())
+    keys = KEPT["coding"]["*.jsonl"]
+    return {"files": len(sampled), "sheets": len(sheets)} | {
+        p.stem: _dump(out / p.name, [_slim(r, keys) for r in _latest(p) if r["cell_id"] in sampled]) for p in coder_files}
+
+
 def sources(folder: Path, cfgs: list[dict], kinds: tuple[str, ...] | None = None, shifts: tuple[int, ...] | None = None,
             transforms: tuple[str, ...] | None = None) -> dict[str, dict]:
     first, out = cfgs[0], {}

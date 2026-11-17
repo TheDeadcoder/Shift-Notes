@@ -45,12 +45,17 @@ def test_hand_bundle_hides_the_arm_and_is_scored_against_a_coder(tmp_path):
     with pytest.raises(FileExistsError):
         notes_coding.bundle([cfg], out, n=4)
     key = [json.loads(line) for line in (out / "key.jsonl").read_text().splitlines()]
-    (out / "codes.csv").write_text("id," + ",".join(notes_coding.FLAGS) + "\n" + "".join(f"{k['id']},1,0,,,,\n" for k in key))
+    head = "id," + ",".join(notes_coding.FLAGS) + "\n"
+    (out / "codes.csv").write_text(head + "".join(f"{k['id']},1,0,,,,\n" for k in key))
+    (out / "other.csv").write_text(head + "".join(f"{k['id']},1,{int(n < 2)},,,,\n" for n, k in enumerate(key)))
     coder = tmp_path / "codes-x.jsonl"
-    coder.write_text("".join(json.dumps({"cell_id": k["item"], "codes": {f: f == "recipe" for f in notes_coding.FLAGS}}) + "\n"
-                             for k in key))
+    coder.write_text("".join(json.dumps({"cell_id": k["item"], "arm": k["item"].split("-")[2],
+                                         "codes": {f: f == "recipe" for f in notes_coding.FLAGS}}) + "\n" for k in key))
     report = "\n".join(notes_coding.human_report(out, [coder]))
-    assert "hand-coded files: 4/4" in report and "codes-x recipe: agreement 1.00" in report and "caveat" not in report
+    assert "codes: 4/4 files coded" in report and "codes-x against codes recipe: agreement 1.00" in report
+    assert "codes against other labelled: agreement 0.50" in report
+    assert "codes-x against other labelled recipe: agreement 0.50" in report
+    assert "codes labelled recipe by arm: A1 0/2, A4 0/2" in report and "caveat" not in report
 
 
 class Coder:

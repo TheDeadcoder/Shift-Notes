@@ -1,7 +1,7 @@
 import csv
 import json
 
-from swarmgate.e1 import battery, behavior, export, mitigations
+from swarmgate.e1 import battery, behavior, export, mitigations, notes_coding
 
 
 def test_tables_hold_one_row_per_session_code_and_trial_without_any_text(tmp_path):
@@ -112,3 +112,19 @@ def test_public_sources_match_the_sources_built_from_the_run_records(tmp_path):
         assert all(bool(public[k].get("control")) == bool(private[k].get("control")) for k in private)
     assert "d|syn|A1|0|main|g2|guard" in public and public["d|syn|A1R|0|main|g4"]["control"] is False
     assert "d|syn|A1|0|main|g2|guard" not in export.sources(tmp_path / "public", [cfg], shifts=(2, 4), transforms=("audit",))
+
+
+def test_hand_export_keeps_the_sheets_and_the_sampled_codes_without_any_text(tmp_path):
+    folder, out, coder = tmp_path / "hand", tmp_path / "results", tmp_path / "codes-x.jsonl"
+    folder.mkdir()
+    (folder / "notes.md").write_text("PRIVATE")
+    _write(folder / "key.jsonl", [{"id": "H001", "item": "a"}])
+    (folder / "one.csv").write_text("id," + ",".join(export.FLAGS) + "\nH001,1,1,0,0,0,0\n")
+    codes = {f: f == "recipe" for f in export.FLAGS}
+    _write(coder, [{"cell_id": c, "arm": "A1", "codes": codes, "raw": "PRIVATE"} for c in ("a", "b")])
+    assert export.hand(folder, out, [coder]) == {"files": 1, "sheets": 1, "codes-x": 1}
+    assert sorted(p.name for p in out.iterdir()) == ["codes-x.jsonl", "key.jsonl", "one.csv"]
+    assert all("PRIVATE" not in p.read_text() for p in out.iterdir())
+    report = notes_coding.human_report(out, [out / "codes-x.jsonl"])
+    assert report == notes_coding.human_report(folder, [coder])
+    assert "codes-x against one labelled: agreement 0.00" in "\n".join(report)
