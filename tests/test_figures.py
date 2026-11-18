@@ -1,5 +1,3 @@
-import csv
-
 from matplotlib import rc_context
 
 from swarmgate.e1 import figures
@@ -16,18 +14,6 @@ def test_denial_curve_counts_the_denials_before_the_success():
     assert curve["A1"] == {0: [0.5, 0.5, 1.0], 1: [0.0, 0.0, 0.0]} and curve["A4"] == {0: [0.0, 1.0, 1.0]}
 
 
-def test_first_study_scores_are_per_lineage_on_the_shared_objectives_of_one_reader(tmp_path):
-    cell = {"reader": figures.FIRST_READER, "donor": "d", "kind": "syn", "arm": "A1", "lineage": "0", "objective": "S1", "success": "1"}
-    rows = [cell, cell | {"objective": "S2", "success": "0"}, cell | {"objective": "E1"}, cell | {"reader": "other", "success": "0"},
-            cell | {"kind": "effect", "success": "0"}, cell | {"donor": "anchor", "arm": "none", "lineage": ""},
-            cell | {"arm": "A4", "lineage": "1", "success": "0"}]
-    with (tmp_path / "battery.csv").open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=list(cell))
-        writer.writeheader()
-        writer.writerows(rows)
-    assert figures.first_study(tmp_path / "battery.csv") == {("d", "A1"): {"0": 0.5}, ("d", "A4"): {"1": 0.0}}
-
-
 def test_a_reader_is_informative_when_the_positive_control_lifts_it():
     assert figures.informative({"none": [0, 0, 0, 0], "positive": [1, 1, 0, 0]})
     assert not figures.informative({"none": [0, 0, 0, 0], "positive": [1, 0, 0, 0, 0]})
@@ -38,6 +24,7 @@ def test_each_figure_is_written_as_a_pdf_without_a_date(tmp_path):
     point, steps = (0.4, 0.2, 0.6), {0: [0.5, 1.0], 1: [0.0, 0.5]}
     with rc_context(figures.STYLE):
         made = [
+            figures.design(tmp_path / "design.pdf"),
             figures.results([("notes", scores)], [("no notes", 1, 10)], {"A4": {4: 0.0, 5: 0.0}, "A1": {4: 0.5, 5: 0.75},
                                                                          "A1R": {4: 0.5, 5: 0.5}},
                             {"A4": {4: point}, "A1": {4: point, 8: point}, "A1R": {4: point, 8: point}},

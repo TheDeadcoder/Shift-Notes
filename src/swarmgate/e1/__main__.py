@@ -87,7 +87,7 @@ def main() -> None:
     g = sub.add_parser("figures")
     g.add_argument("--configs", default="configs/e1-v2.yaml,configs/e1-v2-ow.yaml")
     g.add_argument("--data", default="results/v2")
-    g.add_argument("--first", default="results/e1/battery.csv")
+    g.add_argument("--earlier", default="configs/e1.yaml")
     g.add_argument("--out", default="results/v2/figures")
     x = sub.add_parser("export-records")
     x.add_argument("--configs", default=",".join(f"configs/{name}.yaml" for name in (
@@ -201,7 +201,8 @@ def main() -> None:
     if args.cmd in ("after-repair", "export-tables", "export-records", "figures", "hand-bundle"):
         cfgs = [yaml.safe_load(Path(p).read_text()) for p in args.configs.split(",")]
         if args.cmd == "figures":
-            print("\n".join(str(p) for p in figures.draw(cfgs, Path(args.data), Path(args.first), Path(args.out))))
+            earlier = yaml.safe_load(Path(args.earlier).read_text())
+            print("\n".join(str(p) for p in figures.draw(cfgs, earlier, Path(args.data), Path(args.out))))
         elif args.cmd == "after-repair":
             rows = export.session_rows(cfgs, Path(args.public) if args.public else None)
             coding, repair = ([Path(p) for p in files.split(",") if p] for files in (args.coding, args.repair))
