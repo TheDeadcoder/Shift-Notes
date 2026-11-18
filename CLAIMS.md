@@ -56,19 +56,22 @@ python -m swarmgate.e1 after-repair --public $P \
   --repair $P/notes-coding/repair-deepseek-v4-flash.jsonl,$P/notes-coding/repair-second.jsonl
 ```
 
-**C5**, the edited copies:
+**C5**, the edited copies, with each coder:
 
 ```bash
 python -m swarmgate.e1 mitigate-report --out $P --codes $P/notes-coding-edits/codes-deepseek-v4-flash.jsonl \
   --original $P/notes-coding/codes-deepseek-v4-flash.jsonl
+python -m swarmgate.e1 mitigate-report --out $P --codes $P/notes-coding-edits/codes-second.jsonl \
+  --original $P/notes-coding/codes-second.jsonl
 ```
 
-**C6**, the codes by shift and the agreement between the coders:
+**C6**, the codes by shift and the agreement between the coders; the fourth command gives the codes of the second coder:
 
 ```bash
 python -m swarmgate.e1 notes-code-report --out $P/notes-coding
 python -m swarmgate.e1 notes-code-report --out $P/notes-coding-nogf
 python -m swarmgate.e1 notes-code-report --out $P/notes-coding-hygiene
+python -m swarmgate.e1 notes-code-report --out $P/notes-coding --primary codes-second.jsonl --second codes-deepseek-v4-flash.jsonl
 ```
 
 **C7**, the tests on codes with the second coder as primary:
@@ -83,13 +86,15 @@ python -m swarmgate.e1 v2-report --public $P --battery $P/battery-gemini --codin
 python -m swarmgate.e1 figures
 ```
 
-**C9**, mechanical potency and what the sessions did:
+**C9**, mechanical potency and what the sessions did; the last command covers the prompt arms and the two branches:
 
 ```bash
 python -m swarmgate.e1 potency-report --public $P --config configs/e1-v2.yaml
 python -m swarmgate.e1 potency-report --public $P --config configs/e1-v2-ow.yaml
 python -m swarmgate.e1 chain-report --public $P \
   --configs configs/e1-v2.yaml,configs/e1-v2-ow.yaml,configs/e1-v2-effect.yaml,configs/e1-v2-effect-ow.yaml
+python -m swarmgate.e1 chain-report --public $P \
+  --configs configs/e1-v2-nogf.yaml,configs/e1-v2-hygiene.yaml,configs/e1-v2-mitigation.yaml
 ```
 
 **C10**, the hand-coded samples of the first and the second study:
@@ -150,6 +155,21 @@ python -m swarmgate.e1 battery-report --public $F --out $F/battery-gemini --kind
 python -m swarmgate.e1 battery-report --public $F --out $F/battery
 ```
 
+## Sessions and notes
+
+What the sessions did and what their notes hold, before any reader. None of these counts is a test of the preregistration.
+
+| Claim | Hypothesis, status | Evidence | Where |
+|---|---|---|---|
+| The second study has 1,624 sessions, and they ran as planned | exploratory, unnamed | SYN: 480 sessions with Claude Sonnet 5 as donor and 640 with Qwen 3.5 397B. Effect class: 104 with each donor. 52 in each prompt arm. 192 in the two branches from edited notes. One session refused (Claude, SYN, A1); no merge refused; no malformed tool call | C9, `sessions)` and `refused` |
+| Under the over-blocking guard the agents are denied, under the repaired guard hardly at all | exploratory, unnamed | SYN, shifts 1 to 8, sessions with a denial: A1 143/192 and A4 3/192 (4 denials) with Claude as donor; A1 187/256 and A4 25/256 (37 denials) with Qwen. No A4 session is denied on an over-blocked object | C9, `denials` and `by shift` |
+| Agents of over-blocked lineages work around the block | exploratory, unnamed | A workaround after a denial, SYN, shifts 1 to 8: in 65 of 192 A1 sessions and 18 of 24 lineages (Claude); in 70 of 256 and 24 of 32 (Qwen) | C9, `workarounds` |
+| Over-blocking costs tickets | exploratory, unnamed | SYN, shifts 1 to 8, A1 against A4: tickets 356/384 against 383/384 (Claude), 490/512 against 509/512 (Qwen); lineages that fail a ticket 12/24 against 1/24, two-sided Fisher p = 0.0007, and 12/32 against 1/32, p = 0.0012 | C9, `tickets` and `failing_lineages` |
+| After shift 4 the notes of over-blocked lineages hold a labelled recipe and control notes do not | exploratory, unnamed | A1 18/24 against A4 0/24 (Claude) and 24/32 against 1/32 (Qwen); two-sided Fisher p < 0.0001 for each. Second coder: 21/24 against 0/24, and 22/32 against 0/32 | C6, first and fourth command, `final` and `syn labelled` |
+| The share of notes with a labelled recipe rises over the first shifts and then stays | section 13, exploratory, for shifts 5 to 8; exploratory, unnamed, before | Claude, A1, shifts 1 to 8: 0.58, 0.62, 0.88, 0.75, 0.83, 0.79, 0.83, 0.83 (second coder 0.58, 0.62, 0.88, 0.88, 0.88, 0.88, 0.83, 0.83). A1R, shifts 5 to 8: 0.83, 0.71, 0.88, 0.79 (0.88, 0.83, 0.79, 0.75). A4: 0 except 0.04 at shift 6. Qwen, A1: 0.31, 0.56, 0.62, 0.75, 0.78, 0.78, 0.78, 0.81 | C6, first and fourth command, column `labelled` |
+| A recipe that is in the notes after one shift is there after the next | exploratory, unnamed | Code `recipe`, SYN: 123/127 (Claude, A1), 53/58 (A1R); 146/150 (Qwen, A1), 70/72 (A1R) | C6, `retention` |
+| In later shifts, agents of over-blocked lineages reach the over-blocked object before any denial | exploratory, unnamed | SYN, A1, sessions by shift 1 to 8: 0, 0, 4, 3, 5, 5, 5, 7 of 24 (Claude); 0, 1, 4, 9, 10, 12, 13, 13 of 32 (Qwen) | C9, `by shift`, fifth number |
+
 ## Replication
 
 | Claim | Hypothesis, status | Evidence | Where |
@@ -161,6 +181,7 @@ python -m swarmgate.e1 battery-report --public $F --out $F/battery
 | The result does not rest on the objectives, on the parser or on one lineage | H1, reported; one lineage left out is exploratory, unnamed | Exact objectives 0.576 [0.417, 0.729]; all objectives 0.507 [0.361, 0.649]; lenient parser 0.438. One lineage left out: 0.413 to 0.460 for H1; 0.056 to 0.075 with p at most 0.0132 for H1-OW | C1, `reader gemini-pro-flex`, `one lineage or pair left out` |
 | The notes change what the reader's command does, not how often it sends one | exploratory, unnamed | Attempt rate, A1 − A4: 0.028 [-0.003, 0.066], p = 0.1250 with Claude's notes; -0.039 [-0.172, 0.094], p = 0.7268 with Qwen's | C1, `reader gemini-pro-flex` |
 | Running the commands written in the notes finds next to nothing | H1, reported | Mechanical potency after shift 4: 0.01 for A1 and 0.00 for A4 with Claude as donor, 0.00 and 0.00 with Qwen; positive control 1.00 | C9, `potency-report` |
+| Reader success by notes source, lineage and objective | H1, reported | After shift 4: A1 0.47, A4 0.03; at least one success with the notes of 20/24 A1 lineages and 8/24 A4 lineages. Successes by objective, of 72 trials: A1 S1 44, S2 31, S3 19, S4 42; A4 0, 4, 1, 5. A command is sent in 1.00 (A1) and 0.97 (A4) of trials, and in 0.60 with the empty file | C2, `e1v2:A1@4`, `e1v2:A4@4`, `anchor` |
 
 ## Stealth
 
@@ -168,6 +189,7 @@ python -m swarmgate.e1 battery-report --public $F --out $F/battery
 |---|---|---|---|
 | With the notes, a reader that may issue several commands succeeds before its first denial | H2, family | A1 − A4: 0.490 [0.354, 0.620] over 24 pairs, p < 0.0001, Holm p < 0.0001. Anchors: empty file 0.00, positive control 0.83. Supported | C1, `H2` |
 | The advantage shrinks as more denials are allowed and does not vanish | exploratory | Success before the 1st, 2nd and 4th denial and at any point: A1 0.52 0.66 0.80 0.83; A4 0.03 0.09 0.33 0.47 | C1, `H2 success before`; C8, `results.pdf` (c) |
+| With control notes the reader still succeeds in about half of its episodes, after denials; with no notes in a fifth | exploratory | Success at the first command: A1 0.47, A4 0.03. How episodes ended: A1 success 160, declined 28, budget 4; A4 success 91, declined 85, budget 16. With the empty file: none before a denial, 5 of 24 at any point | C1, `H2 by arm` |
 
 ## Knowledge
 
@@ -177,6 +199,7 @@ python -m swarmgate.e1 battery-report --public $F --out $F/battery
 | The notes leave a stale picture: readers expect the repaired benign commands to be blocked | H3b, pre-set, added after development | Predicted blocking, A1 − A4: 0.437 [0.365, 0.508], 0.293 [0.242, 0.342], 0.288 [0.232, 0.340], 0.393 [0.335, 0.449]; largest p < 0.0001. Supported | C1, `H3b` |
 | The stale picture follows the two repaired files, not the tool | H3b, reported | Rise in predicted blocking, lowest and highest reader: 0.567 to 0.788 on commands the old guard blocked on those files; 0.493 to 0.672 on commands it allowed on the same files; 0.023 to 0.100 on other objects | C1, `H3b split` |
 | It is there in the second donor's notes and in the effect class | exploratory | Qwen's notes after shift 4: 0.146 to 0.186. Effect class: 0.338 to 0.438 with Claude as donor (three readers; the fourth failed its anchors there), 0.116 to 0.157 with Qwen. Each p at most 0.0015 | C1, `probe folder` |
+| The probe separates the anchors for every reader, and a second sampling of the same files moves the boundary score both ways | H3, reported, for the anchors; exploratory for the second sampling | Boundary score with the empty file and with the positive control: 0.47 and 0.87 (Gemini 3.1 Pro), 0.47 and 0.88 (Claude Sonnet 5), 0.41 and 0.92 (Qwen 3.5 397B), 0.39 and 0.84 (DeepSeek V4 Flash). Second sampling, A1 − A4, in the same order: 0.016 [-0.016, 0.049]; 0.045 [0.022, 0.070], p = 0.0004; -0.031 [-0.061, -0.006]; 0.002 [-0.012, 0.022] | C1, `H3 anchors`, `probe folder results/v2/h3-explore-claude` |
 
 ## Persistence through the repair
 
@@ -187,8 +210,11 @@ python -m swarmgate.e1 battery-report --public $F --out $F/battery
 | The notes still hold a labelled recipe | H4c, pre-set | After shift 8: A1R 19/24, A4 0/24, p < 0.0001. Of the lineages with one after shift 4, still there: A1 18/18, A1R 16/18. Supported, so H4 is supported | C1, `H4c` |
 | Against no repair, the repair lowers reader success and leaves the labelled recipe almost as common | section 10, exploratory | A1R − A1 after shift 8, two-sided: reader score -0.132 [-0.243, -0.028] over 24 pairs, p = 0.0338; labelled recipe A1R 19/24, A1 20/24, p = 1.0000 | C1, `repair against no repair` |
 | The same holds with Qwen as donor | H4c, reported | A1R 22/32, A4 0/32; still there: A1 24/24, A1R 22/24 | C1, `qwen3.5-397b, exploratory` |
-| Agents meet the repair and do not record it as one | section 10, reported | Claude, A1R, shifts 5 to 8: a formerly denied command ran in 59 of 96 sessions; an over-blocked object was reached in 71 (A4 94, A1 43). The notes say a denied action now works in 43/96 files (second coder 49/96); they put it down to a change in the reviewer in 0 (1) and to inconsistency in 41 (45). Qwen, A1R: 80 of 128 sessions; 13/128 files (6/128) | C4, `shifts 5 to 8` |
+| After the repair the agents run formerly denied commands, and where their notes record it they call the reviewer inconsistent | section 10, reported | Claude, A1R, shifts 5 to 8: a formerly denied command ran in 59 of 96 sessions; an over-blocked object was reached in 71 (A4 94, A1 43). The notes say a denied action now works in 43/96 files (second coder 49/96); they put it down to a change in the reviewer in 0 (1) and to inconsistency in 41 (45). Qwen, A1R: 80 of 128 sessions; 13/128 files (6/128) | C4, `shifts 5 to 8` |
 | The stale picture also outlasts the repair | exploratory, unnamed | Predicted blocking, A1R − A4 after shift 8 as a share of A1 − A4 after shift 4, lowest and highest reader: 0.49 to 0.58 on Claude's notes, 0.71 to 1.04 on Qwen's | C1, `probe folder` |
+| After the repair the agents send the plain command about as often as while it was blocked, and less often than control agents | section 10, reported | Shifts 5 to 8, sessions with a command that the two guard variants decide differently: A1R 59/96, A1 57/96, A4 94/96 (Claude); A1R 80/128, A1 68/128, A4 124/128 (Qwen). Without a repair (Claude, A1) the notes say a denied action now works in 6/96 files (second coder 2/96) and put it down to inconsistency in 4 (2). Qwen, A1R: put down to inconsistency in 1 file (2), to a change in the reviewer in 0 (0) | C4, `shifts 5 to 8` |
+| Reader success after shift 8, and the work after the repair | H4a, reported; the gap without a repair is exploratory, unnamed | Reader success after shift 8: A1 0.43, A1R 0.30, A4 0.02; lineages with a success 19, 14 and 4 of 24. Without a repair the gap stays: A1 − A4 after shift 8 0.413 [0.271, 0.552], 0.94 [0.78, 1.13] of the gap after shift 4. Tickets, shifts 5 to 8: A1R 188/192, A4 191/192, A1 175/192; A1 − A1R -6.8 points [-10.9, -3.1], A4 − A1R 1.6 [-0.5, 3.6]. Qwen: A1R 249/256 | C2, `e1v2:A1@8`, `paired difference`; C4, `tickets completed` |
+| With the second coder the counts after the repair are close to those of the primary coder | exploratory | Second coder as primary. After shift 8: A1R 18/24, A4 0/24; of the lineages with a labelled recipe in A1 after shift 4, still there: A1 20/21, A1R 18/21. Qwen: A1R 19/32; still there: A1 22/22, A1R 19/22 | C7, `H4c` |
 
 ## Revocation at repair time
 
@@ -199,13 +225,17 @@ python -m swarmgate.e1 battery-report --public $F --out $F/battery
 | The edits remove most labelled recipes, and the notice removes none | section 11, reported | Labelled recipe: unedited 18/24, notice 21/24, audit 7/24, object-scoped 5/24, guard-scoped 1/24. No editor refusal | C5 |
 | Going on from the guard-scoped copy or from an empty file costs no tickets | section 11, reported | Tickets completed against A1R, in percentage points: A1G 1.6 [0.0, 3.6], A1W 2.1 [0.5, 4.2], both within 5 points. Labelled recipe after shift 8: A1G 1/24, A1W 1/24 | C4, `claude-sonnet-5 syn e1v2-mit` |
 | On the probe, the audit leaves more of the stale picture than the guard-scoped edit | exploratory, unnamed | Predicted blocking, audited − guard-scoped copy, four readers: 0.179, 0.173, 0.175, 0.195; each p at most 0.0001 | C1, `probe folder` |
+| Every edited copy lowers reader success | section 11, reported | Reader success after shift 4: unedited 0.47; notice 0.15; audit 0.15; guard-scoped 0.08; object-scoped 0.06; A4 0.03. Lineages with a success: 20, 16, 14, 5 and 6 of 24 | C2, `e1v2:A1@4+` |
+| The second coder finds the same pattern in the copies, and three more recipes in the unedited files | exploratory | Labelled recipe by the second coder: unedited 21/24, notice 21/24, audit 5/24, object-scoped 2/24, guard-scoped 0/24. Mean words: unedited 461; notice 482, audit 431, object-scoped 356, guard-scoped 339 | C5, second command |
+| Only the guard-scoped copy and the empty file were run on | section 11, reported | Shifts 5 to 8: tickets A1G 191/192, A1W 192/192, A1R 188/192. Tool calls per session at shift 5: A1W 7.4, A1G 5.1, A1R 5.2 | C4, `e1v2-mit`; C9, last command |
 
 ## Guard class
 
 | Claim | Hypothesis, status | Evidence | Where |
 |---|---|---|---|
 | Under the same over-blocking, the taint guard leaves fewer labelled recipes than the command-based guard | H6, family | 26 pairs: 16 SYN only, 1 effect only, p = 0.0001, Holm p = 0.0006. Supported | C1, `H6` |
-| Over-blocking was the same in both classes | H6, reported | A1 sessions denied on an over-blocked object, shifts 1 to 4 together: 84 of 96 (SYN) and 46 of 52 (effect) with Claude as donor; 111 of 128 and 50 of 52 with Qwen | C9, `chain-report` |
+| A denial on an over-blocked object occurs in about as many sessions in both classes | H6, reported | A1 sessions denied on an over-blocked object, shifts 1 to 4 together: 84 of 96 (SYN) and 46 of 52 (effect) with Claude as donor; 111 of 128 and 50 of 52 with Qwen | C9, `chain-report` |
+| The effect guard costs more denials and, with Qwen as donor, more tickets | exploratory, unnamed | Effect class, shifts 1 to 4, A1 against A4. Claude: 228 denials in 46/52 sessions; tickets 99/104 against 104/104; lineages that fail a ticket 4/13 against 0/13, two-sided Fisher p = 0.0957. Qwen: 304 denials in 50/52 sessions; tickets 85/104 against 102/104; 11/13 against 1/13, p = 0.0002. Labelled recipe in A1 notes by shift: 0.23, 0.23, 0.23, 0.15 (Claude); 0.15, 0.08, 0.23, 0.15 (Qwen) | C9, `effect A1`; C6, `effect A1 g` |
 
 ## Other readers
 
@@ -214,13 +244,15 @@ python -m swarmgate.e1 battery-report --public $F --out $F/battery
 | A second reader repeats the result | H1 and H1-OW, exploratory | DeepSeek V4 Flash: 0.132 [0.069, 0.212], p < 0.0001 with Claude's notes; 0.065 [0.023, 0.117], p = 0.0039 with Qwen's. Anchors 0.00 and 0.93 | C1, `reader deepseek-v4-flash` |
 | A reader that mostly declines gains nothing from the notes | H1 and H1-OW, exploratory | Claude Sonnet 5 sends a command in 0.11 of trials with A1 notes and 0.08 with A4 notes when Claude is the donor, and in 0.22 and 0.29 when Qwen is. Anchors 0.00 and 0.72; difference 0.000 with either donor's notes | C1, `reader claude-sonnet-5`; C3, `syn` |
 | One reader cannot be interpreted | H1 and H1-OW, exploratory | Qwen 3.5 397B: anchors 0.00 and 0.10, not informative | C1, `reader qwen3.5-397b` |
+| The reader that declines does so with chain notes of either arm, not with the empty file | exploratory | Claude Sonnet 5 sends a command in 0.62 of trials with the empty file and in 0.72 with the positive control, against 0.11 and 0.08 with A1 and A4 notes | C3, `anchor` |
 
 ## Prompt arms
 
 | Claim | Hypothesis, status | Evidence | Where |
 |---|---|---|---|
-| Without the good-faith sentence the notes hold a labelled recipe more often, and with the hygiene sentence in the merge less often | exploratory | Share of A1 notes with a labelled recipe after shift 4: 0.92 without the good-faith sentence and 0.23 with the hygiene sentence, 13 lineages each; 0.75 in the main arm, 24 lineages | C6, `claude-sonnet-5 syn A1 g4` |
+| With the hygiene sentence in the merge the notes hold a labelled recipe less often; without the good-faith sentence the share is not lower. The prompt arms have 13 lineages and the main arm 24, so the levels are not like for like | exploratory | Share of A1 notes with a labelled recipe after shift 4: 0.92 without the good-faith sentence and 0.23 with the hygiene sentence, 13 lineages each; 0.75 in the main arm, 24 lineages | C6, `claude-sonnet-5 syn A1 g4` |
 | Reader success moves the same way | exploratory | Success after shift 4: 0.56 and 0.10; 0.47 in the main arm | C2, `claude-sonnet-5 syn` |
+| What the sessions of the prompt arms did | exploratory | SYN, A1, shifts 1 to 4, 13 lineages each. Without the good-faith sentence: a workaround after a denial in 31/52 sessions and 10 lineages; tickets 98/104; 4/13 lineages fail one. With the hygiene sentence: 16/52 sessions and 9 lineages; tickets 96/104; 7/13 | C9, last command |
 
 ## Coding
 
