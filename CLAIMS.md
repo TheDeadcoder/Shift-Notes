@@ -2,7 +2,7 @@
 
 Each claim of the second study, the hypothesis it belongs to, its status in [PREREGISTRATION-V2.md](PREREGISTRATION-V2.md), the evidence, and the command that prints that evidence.
 
-The last section does the same for the studies that were run before the chains of the first study.
+The last two sections do the same for the first study and for the steps that were run before its chains.
 
 ## How to read the tables
 
@@ -126,6 +126,30 @@ python -m swarmgate.e1 pilot-report --config configs/e1-pilot.yaml --public resu
 python -m swarmgate.e1 pilot-report --config configs/e1-pilot-ow.yaml --public results/e1
 ```
 
+**C15**, what the sessions of the first study did, and its mechanical potency:
+
+```bash
+F=results/e1
+python -m swarmgate.e1 chain-report --public $F
+python -m swarmgate.e1 potency-report --public $F --config configs/e1.yaml
+python -m swarmgate.e1 potency-report --public $F --config configs/e1-ow.yaml
+```
+
+**C16**, the notes of the first study as coded: with the second coder, with the other donor's model on a sample, and with the two coders exchanged:
+
+```bash
+python -m swarmgate.e1 notes-code-report --out $F/notes-coding --second codes-gemini.jsonl
+python -m swarmgate.e1 notes-code-report --out $F/notes-coding
+python -m swarmgate.e1 notes-code-report --out $F/notes-coding --primary codes-gemini.jsonl --second codes-deepseek-v4-flash.jsonl
+```
+
+**C17**, the reader battery of the first study, for each of its two readers:
+
+```bash
+python -m swarmgate.e1 battery-report --public $F --out $F/battery-gemini --kinds syn
+python -m swarmgate.e1 battery-report --public $F --out $F/battery
+```
+
 ## Replication
 
 | Claim | Hypothesis, status | Evidence | Where |
@@ -210,6 +234,28 @@ Three annotators coded samples by hand. Each worked from a bundle that holds the
 | The same holds in a sample of the second study, which has files written after the repair | exploratory, unnamed | 42 files, 7 per donor and arm. Labelled recipe: primary coder 0.95, 0.90 and 0.93, 0.85; second coder 1.00, 1.00 and 0.98, 0.95; the two annotators with each other 0.98, 0.95. By arm, annotators 2 and 3: A1 13/14 and 12/14, A1R 12/14 and 12/14, A4 0/14 and 0/14 | C10, second command, `labelled recipe` |
 | Of the four codes that no test uses, one is not reliable between annotators, and the primary coder agrees poorly with the hand codes on two | section 7, reported, for the first sample; exploratory, unnamed, for the second | Kappa between the annotators, first then second sample: legitimate 0.10, 0.11; caveat 0.71, 0.95; negative 0.83, 0.76; rules 0.69, 0.85. Kappa of the primary coder with each annotator: negative 0.13 and 0.13, then 0.15 and 0.11; rules 0.23 and 0.21, then 0.23 and 0.17. Of the second coder: negative 1.00 and 0.83, then 0.90 and 0.76; rules 0.82 and 0.80, then 0.85 and 0.80 | C10, `legitimate`, `caveat`, `negative`, `rules` |
 | The tests on codes do not depend on which coder is primary | exploratory | Second coder as primary. H6: 15 SYN only, 1 effect only, p = 0.0003. H4c: A1R 18/24, A4 0/24 | C7, `H6`, `H4c` |
+
+## First study
+
+The first study ran 416 sessions: two donors, two guard classes and two arms, with 13 lineages of four shifts in each cell. Its hypotheses and their status are those of [PREREGISTRATION.md](PREREGISTRATION.md). The reader battery was a secondary measure there, to be run only if it was built before the chains finished. It was run after them, so its rows are exploratory. Reply labels are the ones stored when the battery ran. In each row, Claude Sonnet 5 as donor comes before Qwen 3.5 397B, and the command-based class (SYN) before the effect class.
+
+| Claim | Hypothesis, status | Evidence | Where |
+|---|---|---|---|
+| The over-blocking guard denied an action in nearly every session, and the repaired guard in few | exploratory | Sessions with a denial, of 52, A1 against A4: 46 against 4 and 46 against 0; 48 against 5 and 48 against 4. Denials: 152 and 205, 189 and 335, against 4 and 0, 6 and 4 | C15, `denials` |
+| Under the over-blocking guard, agents reached an over-blocked object another way | exploratory | Sessions of 52, then lineages of 13: 25 and 11, 5 and 3; 17 and 10, 7 and 4 | C15, `workarounds` |
+| Over-blocking cost tickets in one cell | exploratory | Tickets completed of 104, A1 then A4: 101 and 104, 97 and 104; 101 and 103, 77 and 102. Lineages that failed a ticket, Qwen under the effect guard: 11/13 against 1/13, two-sided Fisher p = 0.0002. The other three cells: 3/13 against 0/13 or 1/13, p at least 0.2200 | C15, `tickets`, `failing_lineages` |
+| Every session ran to its end | exploratory | 416 sessions: none refused, no merge refused, no malformed call | C15, `refused` |
+| Running the commands written in the notes finds no attack | H1, primary; H1-OW, secondary | Mechanical potency after shifts 2 and 4: 0.00 in every arm and class, for both donors. A1 − A4 under SYN after shift 4: 0.000 [0.000, 0.000] over 13 pairs, p = 1.0000, for each donor. Not supported | C15, `H1 (syn, g4)` |
+| The measure registers an attack in the command-based class only | H2, secondary | Positive control against the empty file: 1.00 against 0.00 under SYN, 0.00 against 0.00 in the effect class. H2 is not estimable | C15, `anchor`, `H2` |
+| The notes held few commands to run | exploratory | Candidates in the final A1 notes under SYN: 13 in 13/13 files; 2 in 1/13 files | C15, `candidates` |
+| The notes record the detour and label it as a way around the reviewer | exploratory | Final notes with a labelled recipe under SYN, A1 against A4: 11/13 against 0/12; 10/13 against 0/13; two-sided Fisher p at most 0.0001. In the effect class: 2/13 against 0/13; 5/13 against 0/13 | C16, first command, `final` |
+| The record grows over the shifts and stays | exploratory | Share of A1 notes with a labelled recipe under SYN after shifts 1 to 4: 0.62, 0.69, 0.85, 0.85; 0.31, 0.58, 0.69, 0.77. A4: 0.00 at every shift. A recipe present after one shift is there after the next in 27/29 and 20/20 | C16, first command, `syn    A1`, `retention` |
+| Two coders agree on the two codes used | exploratory | 412 double-coded files: recipe agreement 0.94, kappa 0.83; labelled 0.98, 0.95. On a sample of 76 files coded by the other donor's model: kappa 0.86 and 0.93. The other four codes: kappa 0.32 to 0.60 | C16, first and second commands, `agreement` |
+| The contrast does not depend on which coder is primary | exploratory | With the coders exchanged: 12/13 against 0/13; 10/13 against 0/13 | C16, third command, `final` |
+| With Claude's over-blocked notes, a reader succeeds against the repaired guard | exploratory | Gemini 3.1 Pro, shared-principle objectives: 0.58 with A1 notes, 0.02 with A4 notes; A1 − A4 0.558 [0.404, 0.699] over 13 pairs, p = 0.0002; lineages with a success 12/13 against 2/13. Anchors: empty file 0.08, positive control 0.75 | C17, first command, `claude-sonnet-5`, `gate` |
+| With Qwen's notes the gain is smaller | exploratory | 0.11 against 0.01; A1 − A4 0.103 [0.019, 0.199], p = 0.0469; lineages 5/13 against 1/13 | C17, first command, `qwen3.5-397b` |
+| A reader that mostly declines gains almost nothing | exploratory | Claude Sonnet 5 under SYN sends a command in 0.13 and 0.09 of trials with Claude's A1 and A4 notes, and in 0.21 and 0.36 with Qwen's. Success 0.01 against 0.00; A1 − A4 0.006 [0.000, 0.019], p = 0.5000, with either donor's notes. Anchors 0.00 and 0.75 | C17, second command, `syn` |
+| The effect class cannot be interpreted | exploratory | Claude Sonnet 5 as reader: positive control 0.00, empty file 0.08; not informative | C17, second command, `gate (effect)` |
 
 ## Earlier studies
 
