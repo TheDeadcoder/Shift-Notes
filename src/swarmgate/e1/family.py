@@ -4,7 +4,7 @@ from pathlib import Path
 from statistics import mean
 
 from ..e0.observer import load_jsonl
-from . import knowledge
+from . import battery, knowledge
 from .analysis import contrast, holm, retained_share, signflip
 from .battery import GATE_UPLIFT
 
@@ -133,6 +133,12 @@ def attempts_detail(rows: list[dict], turns: Path) -> list[str]:
         if rs:
             late = _counts(r["stop"] for r in rs if r["stop"] not in ("success", "budget") and r["turns"] > 1)
             lines.append(f"    {arm:<9}{mean(r['success_turn'] == 1 for r in rs):.2f}; {_counts(r['stop'] for r in rs)}; {late}")
+    lines.append("H2 denials by arm: episodes with a denial; denials per episode; successes that follow a denial")
+    for arm, rs in by_arm.items():
+        if rs:
+            won = [r for r in rs if r["success_turn"] is not None]
+            lines.append(f"    {arm:<9}{sum(bool(r['denial_turns']) for r in rs)}/{len(rs)}; "
+                         f"{mean(len(r['denial_turns']) for r in rs):.2f}; {sum(bool(r['denial_turns']) for r in won)}/{len(won)}")
     return lines
 
 
@@ -202,6 +208,23 @@ def _split(folder: Path, chain: list[dict], readers: list[str]) -> list[str]:
         lines.append(f"H3b split {reader}: G blocked on the repaired files {gap['blocked']:.3f}; G allowed on the same files "
                      f"{gap['same']:.3f}; G allowed on other objects {gap['other']:.3f}")
     return lines
+
+
+def _flat(folder: Path, chain: list[dict], readers: list[str]) -> list[str]:
+    log = folder / knowledge.REPLY_LOG
+    if not log.exists():
+        return []
+    forbidden = {it["item_id"] for it in knowledge.select_probe_items() if it["category"].startswith("forbidden")}
+    kept = {r["probe_id"] for r in chain}
+    flat, half = defaultdict(list), defaultdict(list)
+    for r in load_jsonl(log):
+        if r["probe_id"] in kept:
+            flat[(r["reader"], r["arm"])].append(len({p for i, p in r["item_probs"].items() if i in forbidden}) == 1)
+    for r in chain:
+        half[(r["reader"], r["arm"])].append(2 * r["score_num"] == r["score_den"])
+    return [f"H3 replies with one probability for every forbidden command, and with a boundary score of exactly one half, {reader}: "
+            + ", ".join(f"{arm} {sum(flat[cell])}/{len(flat[cell])} and {sum(half[cell])}/{len(half[cell])}"
+                        for arm in knowledge.ARMS for cell in [(reader, arm)]) for reader in readers]
 
 
 def _probe_rows(folder: Path) -> tuple[list[dict], list[str], list[str]]:
@@ -298,7 +321,7 @@ def probe_test(folder: Path) -> tuple[tuple[str, dict] | None, list[str]]:
         lines.append(f"H3b {reader}: predicted blocking on benign commands G blocked less those G allowed, A1 - A4 "
                      f"{b['mean']:.3f} [{b['low']:.3f}, {b['high']:.3f}], p = {b['p']:.4f}; G blocked alone {raw['mean']:.3f} "
                      f"[{raw['low']:.3f}, {raw['high']:.3f}]")
-    lines += _split(folder, chain, list(stale))
+    lines += _split(folder, chain, list(stale)) + _flat(folder, chain, list(stale))
     if knowledge.CLAUDE_READER not in summary["per_reader"]:
         return None, lines + [f"H3 and H3b count as p = 1: {knowledge.CLAUDE_READER} did not pass its anchors"]
     worst, (b, _) = max(stale.items(), key=lambda kv: kv[1][0]["p"])
@@ -307,6 +330,31 @@ def probe_test(folder: Path) -> tuple[tuple[str, dict] | None, list[str]]:
     label = (f"{chain[0]['donor']} boundary score, A1@{chain[0]['shift']} - A4@{chain[0]['shift']}, largest p of "
              f"{len(summary['per_reader'])} readers ({reader})")
     return (label, d), lines
+
+
+def by_recipe(per: dict, lab: dict, donor: str, shift: int) -> list[str]:
+    a1, held = _find(per, donor, "A1", shift), _arm(lab, donor, "syn", "A1", shift)
+    split = {flag: [v for j, v in per[a1].items() if j in held and bool(held[j]) is flag] for flag in (True, False)} if a1 else {}
+    if not split or not all(split.values()):
+        return []
+    return [f"reader score by notes content, exploratory, {donor} A1@{shift}: {mean(split[True]):.2f} with a labelled recipe "
+            f"({len(split[True])} lineages), {mean(split[False]):.2f} without ({len(split[False])})"]
+
+
+def prompt_arm(per: dict, main: dict, arm: dict, lab: dict, other: dict, shift: int) -> list[str]:
+    here, there = (_arm(codes, cfg["donor"], "syn", "A1", shift) for cfg, codes in ((arm, other), (main, lab)))
+    shared = sorted(set(here) & set(there))
+    parts = [f"labelled recipe {sum(bool(here[j]) for j in shared)}/{len(shared)} against "
+             f"{sum(bool(there[j]) for j in shared)}/{len(shared)}"]
+    a, b = (battery._group({"donor": cfg["donor"], "kind": "syn", "run": cfg["name"], "arm": "A1", "shift": shift})
+            for cfg in (arm, main))
+    gap = _gap(per, a, b) if a in per and b in per else {}
+    if gap:
+        d = contrast(per[a], per[b])
+        parts.append(f"reader score {mean(per[a][j] for j in gap):.2f} against {mean(per[b][j] for j in gap):.2f}, difference "
+                     f"{d['mean']:.3f} over {d['n']} pairs, 95% CI [{d['low']:.3f}, {d['high']:.3f}], two-sided p = "
+                     f"{_two_sided(list(gap.values())):.4f}")
+    return [f"prompt arm {arm['name']} against {main['name']} on the same schedules, A1@{shift}, exploratory: " + "; ".join(parts)]
 
 
 def report(per: dict, controls: set, donors: list[str], coder_files: list[Path], control_arms: set,
@@ -350,4 +398,6 @@ def report(per: dict, controls: set, donors: list[str], coder_files: list[Path],
         lines += persistence(lab, donor, control_arms, shifts[0], shifts[-1], "H4c" if k == 0 else f"{donor}, exploratory:")
         if k == 0 and shifts[-1] > shifts[0]:
             lines += unrepaired(per, lab, donor, shifts[-1])
+        if k == 0:
+            lines += by_recipe(per, lab, donor, shifts[0])
     return lines + extra + more

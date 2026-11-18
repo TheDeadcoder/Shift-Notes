@@ -71,6 +71,7 @@ def main() -> None:
     f.add_argument("--probe")
     f.add_argument("--readers")
     f.add_argument("--explore")
+    f.add_argument("--prompt-arms")
     f.add_argument("--public")
     x = sub.add_parser("export-tables")
     x.add_argument("--configs", default="configs/e1.yaml,configs/e1-ow.yaml")
@@ -181,11 +182,13 @@ def main() -> None:
     if args.cmd == "v2-report":
         cfgs = [yaml.safe_load(Path(p).read_text()) for p in args.configs.split(",")]
         shifts = tuple(int(g) for g in args.shifts.split(","))
-        if args.public:
-            srcs = export.sources(Path(args.public), cfgs, ("syn",), shifts)
-        else:
+        def sources(runs: list[dict]) -> dict:
+            if args.public:
+                return export.sources(Path(args.public), runs, ("syn",), shifts)
             edits = mitigations.edited(Path(args.edits)) if args.edits else None
-            srcs = battery.sources(cfgs, kinds=("syn",), shifts=shifts, edits=edits)
+            return battery.sources(runs, kinds=("syn",), shifts=shifts, edits=edits)
+
+        srcs = sources(cfgs)
         out = Path(args.battery)
         per, controls = battery.lineage_scores(srcs, out / "responses.jsonl", out / "executions.jsonl")
         donors = list(dict.fromkeys(c["donor"] for c in cfgs))
@@ -197,6 +200,12 @@ def main() -> None:
             print("\n".join(robustness.readers(srcs, [Path(p) for p in args.readers.split(",")], donors, shifts)))
         for folder in args.explore.split(",") if args.explore else ():
             print("\n".join([f"probe folder {folder}"] + family.probe_groups(Path(folder))))
+        coded = family.labelled([Path(p) for p in args.coding.split(",")])
+        for pair in args.prompt_arms.split(",") if args.prompt_arms else ():
+            arm, codes = (part for part in pair.split("="))
+            arm = yaml.safe_load(Path(arm).read_text())
+            scores = battery.lineage_scores(sources([cfgs[0], arm]), out / "responses.jsonl", out / "executions.jsonl")[0]
+            print("\n".join(family.prompt_arm(scores, cfgs[0], arm, coded, family.labelled([Path(codes)]), shifts[0])))
         return
     if args.cmd in ("after-repair", "export-tables", "export-records", "figures", "hand-bundle"):
         cfgs = [yaml.safe_load(Path(p).read_text()) for p in args.configs.split(",")]

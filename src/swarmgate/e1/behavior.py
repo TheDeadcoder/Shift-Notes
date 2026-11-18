@@ -58,6 +58,34 @@ def _candidates(potency: list[dict], kind: str, arm: str, shift: int | None = No
     return sum(counts), sum(c > 0 for c in counts), len(counts)
 
 
+def _through(rows: list[dict]) -> str:
+    worked = [r for r in rows if r["workarounds"]]
+    return ", ".join(f"{sum(r['shift'] <= g for r in worked)} in {len({r['lineage'] for r in worked if r['shift'] <= g})}"
+                     for g in sorted({r["shift"] for r in rows}))
+
+
+def _classes(sessions: list[dict], runs: set, arm: str = "A1") -> list[str]:
+    by = defaultdict(list)
+    for r in sessions:
+        if r["run"] in runs and r["arm"] == arm:
+            by[(r["donor"], r["kind"])].append(r)
+    lines = []
+    for donor in sorted({d for d, _ in by}):
+        cells = {k: rs for (d, k), rs in sorted(by.items()) if d == donor and len({r["run"] for r in rs}) == 1}
+        if len(cells) < 2:
+            continue
+        shared = set.intersection(*({(r["lineage"], r["shift"]) for r in rs} for rs in cells.values()))
+        parts = []
+        for kind, rs in cells.items():
+            rs = [r for r in rs if (r["lineage"], r["shift"]) in shared]
+            parts.append(f"{kind} {len(rs)} sessions, denied on an over-blocked object {sum(bool(r['direct']) for r in rs)}, "
+                         f"denials per session {mean(r['denials'] for r in rs):.2f}, object reached "
+                         f"{sum(bool(r['reached']) for r in rs)}, tickets {sum(r['tickets_done'] for r in rs)}/"
+                         f"{sum(r['tickets'] for r in rs)}")
+        lines.append(f"{donor} {arm}, the guard classes on the same lineages and shifts: " + "; ".join(parts))
+    return lines
+
+
 def chain_report(cfgs: list[dict], sessions: list[dict], potency: list[dict]) -> list[str]:
     lines = []
     for cfg in cfgs:
@@ -97,7 +125,12 @@ def chain_report(cfgs: list[dict], sessions: list[dict], potency: list[dict]) ->
                         lines.append(f"  {kind:6} {arm} shift {shift}: {len(stats)}, "
                                      + ", ".join(str(sum(s[k] for s in stats)) for k in ROUTE)
                                      + (f"; other guard variant differs in {sum(d > 0 for d in shadow)}" if shadow else ""))
-    return lines
+        for kind in cfg["kinds"]:
+            for arm in arms:
+                if arm_spec(cfg, arm)["variant"] == "G":
+                    cell = [r for r in rows if (r["kind"], r["arm"]) == (kind, arm)]
+                    lines.append(f"  {kind:6} {arm} workarounds through each shift, sessions in lineages: {_through(cell)}")
+    return lines + _classes(sessions, {cfg["name"] for cfg in cfgs})
 
 
 def pilot_report(cfg: dict, rows: list[dict]) -> list[str]:
@@ -126,7 +159,17 @@ def _completion(rows: list[dict]) -> dict:
     return {j: 100 * done / total for j, (done, total) in per.items()}
 
 
-def after_repair(rows: list[dict], coding: list[Path], repair: list[Path], after: int, reference: str = "A1R") -> list[str]:
+def _kept(notes: dict, coded: dict, cell: tuple, lineages: list, shifts: list[int]) -> str:
+    donor, kind, arm = cell
+    said = {j for j in lineages if any(c["works_now"] and c["inconsistent"]
+                                       for g in shifts if (c := coded.get((donor, kind, arm, g, j))))}
+    held = [j for j in lineages if (c := notes.get((donor, kind, arm, shifts[-1], j))) and c["recipe"] and c["labelled"]]
+    return (f"{sum(j in said for j in held)}/{len(said)} where they do, "
+            f"{sum(j not in said for j in held)}/{len(lineages) - len(said)} where they do not")
+
+
+def after_repair(rows: list[dict], coding: list[Path], repair: list[Path], after: int, reference: str = "A1R",
+                 source: str = "A1") -> list[str]:
     notes, answers = _coded(coding), [_coded([path]) for path in repair]
     groups = defaultdict(list)
     for r in rows:
@@ -166,4 +209,15 @@ def after_repair(rows: list[dict], coding: list[Path], repair: list[Path], after
         d = contrast(_completion(groups[group]), _completion(groups[base[0]]))
         lines.append(f"  {donor} {kind} {run}:{arm} - {reference}: {d['mean']:.1f} [{d['low']:.1f}, {d['high']:.1f}] over {d['n']} "
                      f"lineages -> {'within' if abs(d['mean']) <= UTILITY_MARGIN else 'outside'} {UTILITY_MARGIN:g} points")
-    return lines
+    kept_lines = []
+    for (donor, kind, run, arm), rs in sorted(groups.items()):
+        had = sorted(j for j in {r["lineage"] for r in rs}
+                     if (c := notes.get((donor, kind, source, after, j))) and c["recipe"] and c["labelled"])
+        shifts = sorted({r["shift"] for r in rs})
+        if arm == reference and had and any((donor, kind, arm, shifts[-1], j) in coded for coded in answers for j in had):
+            kept = " | ".join(_kept(notes, coded, (donor, kind, arm), had, shifts) for coded in answers)
+            kept_lines.append(f"  {donor} {kind} {run}:{arm}: of {len(had)} lineages with one in {source} after shift {after}, "
+                              f"still there after shift {shifts[-1]}: {kept}")
+    head = (f"labelled recipe kept in {reference}, by whether its notes put a now-working action down to inconsistency; "
+            "one entry per coder file")
+    return lines + ([head, *kept_lines] if kept_lines else [])

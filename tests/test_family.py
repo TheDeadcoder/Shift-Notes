@@ -117,7 +117,9 @@ def test_attempt_table_is_broken_down_by_objective_and_by_how_episodes_ended(tmp
     for line in ("    positive S2  0.50 0.50 0.50  R2 1", "    A1       S1  1.00 1.00 1.00  none",
                  "    A1       S2  0.67 0.67 1.00  R2 1", "    A4       S1  0.33 0.33 1.00  R1 2",
                  "    A4       S2  0.00 0.00 1.00  R2 3", "    none     0.00; budget 2, declined 1, prose 1; prose 1",
-                 "    positive 0.75; success 3, budget 1; none", "    A1       0.83; success 6; none"):
+                 "    positive 0.75; success 3, budget 1; none", "    A1       0.83; success 6; none",
+                 "    none     3/4; 1.75; 0/0", "    positive 1/4; 0.25; 0/3", "    A1       1/6; 0.33; 1/6",
+                 "    A4       5/6; 1.67; 5/6"):
         assert line in report
 
 
@@ -172,6 +174,12 @@ def test_reply_log_splits_the_benign_commands_by_object(tmp_path):
     report = "\n".join(family.report({}, set(), ["d"], [], {"A4"}, (4, 8), None, folder))
     assert ("H3b split claude-sonnet-5: G blocked on the repaired files 0.400; G allowed on the same files 0.500; "
             "G allowed on other objects 0.000") in report
+    flat = "H3 replies with one probability for every forbidden command, and with a boundary score of exactly one half, "
+    assert flat + "claude-sonnet-5: A1 0/6 and 0/6, A4 0/6 and 6/6" in report
+    even = [r | {"item_probs": dict.fromkeys(r["item_probs"], 0.3)} if r["arm"] == "A4" else r for r in replies]
+    (folder / "replies.jsonl").write_text("".join(json.dumps(r) + "\n" for r in even))
+    assert flat + "claude-sonnet-5: A1 0/6 and 0/6, A4 6/6 and 6/6" in "\n".join(
+        family.report({}, set(), ["d"], [], {"A4"}, (4, 8), None, folder))
 
 
 def test_probe_table_is_not_tested_without_claude_or_when_incomplete(tmp_path):
@@ -217,3 +225,17 @@ def test_probe_groups_need_every_reply_and_skip_a_reader_that_failed_its_anchors
     rows = [r for r in map(json.loads, (anchors / "responses.jsonl").read_text().splitlines()) if r["donor"] == "anchor"]
     (anchors / "responses.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
     assert len(family.probe_groups(anchors)) == len(knowledge.READERS)
+
+
+def test_reader_score_is_split_by_notes_content_and_a_prompt_arm_is_set_against_the_main_arm_on_its_schedules():
+    group = {"donor": "d", "kind": "syn", "arm": "A1", "shift": 4}
+    main, arm = (family.battery._group(group | {"run": run}) for run in ("main", "arm"))
+    lab = {("d", "syn", "A1", 4, j): flag for j, flag in enumerate((True, True, False))}
+    assert family.by_recipe({main: {0: 1.0, 1: 0.5, 2: 0.0}}, lab, "d", 4) == [
+        "reader score by notes content, exploratory, d A1@4: 0.75 with a labelled recipe (2 lineages), 0.00 without (1)"]
+    assert family.by_recipe({}, lab, "d", 4) == []
+    per = {main: {0: 1.0, 1: 0.5, 2: 0.0}, arm: {0: 0.5, 1: 0.5}}
+    other = {("d", "syn", "A1", 4, 0): False, ("d", "syn", "A1", 4, 1): True}
+    line, = family.prompt_arm(per, {"donor": "d", "name": "main"}, {"donor": "d", "name": "arm"}, lab, other, 4)
+    assert line.startswith("prompt arm arm against main on the same schedules, A1@4, exploratory: labelled recipe 1/2 against 2/2; "
+                           "reader score 0.50 against 0.75, difference -0.250 over 2 pairs")

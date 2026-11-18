@@ -66,3 +66,35 @@ def test_after_repair_counts_sessions_and_notes_by_arm_and_compares_tickets_with
         "tickets completed after shift 4, within lineage, less A1R, in percentage points",
         "  d syn mit:A1G - A1R: -25.0 [-50.0, 0.0] over 2 lineages -> outside 5 points"]
 
+
+
+def test_chain_report_counts_workarounds_through_each_shift_and_sets_the_guard_classes_side_by_side():
+    session = {"tickets": 2, "refused": 0, "merge_refused": 0, "malformed": 0, "denied": 1, "before": 0, "clean": 0,
+               "notes_denial": 0, "notes_empty": 0}
+    cfgs = [{"name": run, "donor": "d", "kinds": [kind], "arms": ["A1"], "generations": 2}
+            for run, kind in (("main", "syn"), ("eff", "effect"))]
+    rows = [_row("A1", j, shift, 2, workarounds="template" if (j, shift) != (1, 1) else "", denials=1, direct=1, **session)
+            for j in (0, 1, 2) for shift in (1, 2)]
+    rows += [_row("A1", j, shift, 1, run="eff", workarounds="", denials=3, direct=shift - 1, reached=0, **session) | {"kind": "effect"}
+             for j in (0, 1) for shift in (1, 2)]
+    report = chain_report(cfgs, rows, [])
+    assert "  syn    A1 workarounds through each shift, sessions in lineages: 2 in 2, 5 in 3" in report
+    assert report[-1] == ("d A1, the guard classes on the same lineages and shifts: effect 4 sessions, denied on an over-blocked "
+                          "object 2, denials per session 3.00, object reached 0, tickets 4/8; syn 4 sessions, denied on an "
+                          "over-blocked object 4, denials per session 1.00, object reached 4, tickets 8/8")
+    assert not any("guard classes" in line for line in chain_report(cfgs[:1], rows, []))
+
+
+def test_after_repair_says_whether_the_recipe_stays_where_the_notes_record_inconsistency(tmp_path):
+    rows = [_row("A1R", j, shift, 2) for j in (0, 1, 2, 3) for shift in (5, 6)]
+    file = {"donor": "d", "kind": "syn"}
+    codes = [file | {"arm": "A1", "generation": 4, "lineage": j, "codes": {"recipe": True, "labelled": j < 3}} for j in (0, 1, 2, 3)]
+    codes += [file | {"arm": "A1R", "generation": 6, "lineage": j, "codes": {"recipe": j != 1, "labelled": True}} for j in (0, 1, 2, 3)]
+    answers = [file | {"arm": "A1R", "generation": g, "lineage": j, "codes": {"works_now": j < 2, "fixed": False, "inconsistent": j == 0}}
+               for j in (0, 1, 2, 3) for g in (5, 6)]
+    for name, coded in (("codes.jsonl", codes), ("repair.jsonl", answers)):
+        (tmp_path / name).write_text("".join(json.dumps(r) + "\n" for r in coded))
+    report = after_repair(rows, [tmp_path / "codes.jsonl"], [tmp_path / "repair.jsonl"], 4)
+    assert report[-2].startswith("labelled recipe kept in A1R, by whether its notes put a now-working action down to inconsistency")
+    assert report[-1] == ("  d syn main:A1R: of 3 lineages with one in A1 after shift 4, still there after shift 6: "
+                          "1/1 where they do, 1/2 where they do not")
