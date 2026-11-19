@@ -24,3 +24,15 @@ The single record of deviations from the study plan.
   - with streaming, as a dropped connection, including for a minimal request with no system prompt and no tools.
 
   Three complete pilot runs failed this way for every session, two without streaming and one with it. The other two candidates ran normally over the same period. The decision was made before any open-weight chain session ran.
+
+## E1 v2: reader service tier
+
+- **Planned:** the reader of H1 is called as in the first study's reader battery, which used the provider's standard tier.
+- **Changed:** reader calls use the provider's Flex tier. The model and its sampling are unchanged. Every read that enters one comparison uses that tier, and the first study's 26 notes files are read again on it as the check that the reader has not changed.
+- **Why:** the full set of reads fits the study's budget only on this tier. An anchor run on each tier gave the same validity result: the empty file succeeded in 0.03 of trials on the standard tier and 0.00 on Flex, and the positive control in 0.72 and 0.70. The two runs differed in one respect: with the empty file the reader declined in 4 of 40 trials on Flex and in 12 of 40 on the standard tier, and its replies were shorter on average. For that reason no comparison mixes the two tiers. The change was made before any fresh notes file was read.
+
+## E1 v2: which replies count as a command
+
+- **Planned:** reader replies are classified as in the first study's reader battery.
+- **Changed:** the pattern that recognises a refusal in words (`REFUSAL` in `src/swarmgate/e1/probe.py`) covers more wordings. A reply it matches is a non-attempt and is not run. Before, some of these replies were treated as commands, run, and failed.
+- **Why:** the reader's most common refusal sentence was not recognised, and in the reader that may issue several commands a refusal that is run as a command does not end the episode. Applied to every stored reply of the first study and of development, the wider pattern relabels 328 of 5,795 replies, all of them refusals, and changes no stored success value. The change was made before any fresh notes file was read.

@@ -1,6 +1,7 @@
 import math
 import random
 from collections import Counter, defaultdict
+from fractions import Fraction
 from pathlib import Path
 from statistics import mean
 
@@ -95,11 +96,30 @@ def vignette_report(run_dir: Path, primary: str = "codes-gemini.jsonl", second: 
     return lines
 
 
+def probe_report(rows: list[dict]) -> list[str]:
+    groups = defaultdict(list)
+    for r in rows:
+        donor = r["role"] == "donor"
+        cell = f"donor gf={int(r['good_faith'])} bypass={int(r['bypass'])}" if donor else f"attacker notes={r['notes']}"
+        for label in (r["role"], cell):
+            groups[(r["model"], label)].append(r["action"])
+    return [f"{model:<22}{label:<24}n={len(actions):<4}" + ", ".join(f"{k} {v}" for k, v in Counter(actions).most_common())
+            for (model, label), actions in sorted(groups.items())]
+
+
 def signflip(diffs: list[float]) -> float:
-    observed = sum(diffs)
-    hits = sum(sum(d if mask >> i & 1 else -d for i, d in enumerate(diffs)) >= observed - 1e-12
-               for mask in range(2 ** len(diffs)))
-    return hits / 2 ** len(diffs)
+    exact = [Fraction(d).limit_denominator(10 ** 6) for d in diffs]
+    scale = math.lcm(*(f.denominator for f in exact))
+    steps = [int(f * scale) for f in exact]
+    sums = Counter({0: 1})
+    for d in steps:
+        step = Counter()
+        for s, c in sums.items():
+            step[s + d] += c
+            step[s - d] += c
+        sums = step
+    observed = sum(steps)
+    return sum(c for s, c in sums.items() if s >= observed) / 2 ** len(steps)
 
 
 def bootstrap(samples: list[list[float]], stat, reps: int = 10000, seed: int = 0) -> tuple[float, float]:
@@ -108,16 +128,50 @@ def bootstrap(samples: list[list[float]], stat, reps: int = 10000, seed: int = 0
     return draws[int(0.025 * reps)], draws[int(0.975 * reps) - 1]
 
 
+def holm(pvalues: dict[str, float]) -> dict[str, float]:
+    ordered = sorted(pvalues.items(), key=lambda kv: kv[1])
+    out, running = {}, 0.0
+    for rank, (name, p) in enumerate(ordered):
+        running = max(running, min(1.0, (len(ordered) - rank) * p))
+        out[name] = running
+    return out
+
+
+def contrast(a: dict, b: dict) -> dict:
+    keys = sorted(set(a) & set(b))
+    diffs = [a[k] - b[k] for k in keys]
+    if not diffs:
+        return {"n": 0, "mean": math.nan, "low": math.nan, "high": math.nan, "p": math.nan}
+    low, high = bootstrap([diffs], mean)
+    return {"n": len(diffs), "mean": mean(diffs), "low": low, "high": high, "p": signflip(diffs)}
+
+
+def retained_share(after: dict, before: dict, reps: int = 10000, seed: int = 0) -> dict:
+    keys = sorted(set(after) & set(before))
+    top, bottom = [after[k] for k in keys], [before[k] for k in keys]
+    if not keys or sum(bottom) <= 0:
+        return {"n": len(keys), "share": math.nan, "low": math.nan, "high": math.nan}
+    rng = random.Random(seed)
+    draws = []
+    for _ in range(reps):
+        picks = [rng.randrange(len(keys)) for _ in keys]
+        den = sum(bottom[i] for i in picks)
+        if den <= 0:
+            return {"n": len(keys), "share": sum(top) / sum(bottom), "low": math.nan, "high": math.nan}
+        draws.append(sum(top[i] for i in picks) / den)
+    draws.sort()
+    return {"n": len(keys), "share": sum(top) / sum(bottom), "low": draws[int(0.025 * reps)], "high": draws[int(0.975 * reps) - 1]}
+
+
 def _shared(row: dict) -> float:
-    return sum(row["scores"][o] for o in SHARED) / len(SHARED)
+    return sum(row[o] for o in SHARED) / len(SHARED)
 
 
 def _exact(rows: list[dict]) -> str:
-    return " ".join(f"{o} {mean(r['scores'][o] for r in rows):.2f}" for o in EXACT)
+    return " ".join(f"{o} {mean(r[o] for r in rows):.2f}" for o in EXACT)
 
 
-def potency_report(run_dir: Path, final: int = 4) -> list[str]:
-    rows = load_jsonl(run_dir / "potency.jsonl")
+def potency_report(rows: list[dict], final: int = 4) -> list[str]:
     kinds = sorted({r["kind"] for r in rows})
     lines = ["mean shared-principle potency, exact objectives alongside"]
     pairs, scale = {}, {}
@@ -125,12 +179,12 @@ def potency_report(run_dir: Path, final: int = 4) -> list[str]:
         anchors = {r["arm"]: r for r in rows if r["kind"] == kind and r["lineage"] is None}
         for name, r in sorted(anchors.items()):
             lines.append(f"  {kind:<6} anchor {name:<10} shared {_shared(r):.2f}  {_exact([r])}")
-        for g in sorted({r["generation"] for r in rows if r["kind"] == kind and r["generation"]}):
+        for g in sorted({r["shift"] for r in rows if r["kind"] == kind and r["shift"]}):
             for arm in ("A1", "A4"):
-                rs = [r for r in rows if r["kind"] == kind and r["arm"] == arm and r["generation"] == g]
+                rs = [r for r in rows if r["kind"] == kind and r["arm"] == arm and r["shift"] == g]
                 if rs:
                     lines.append(f"  {kind:<6} {arm} g{g} n={len(rs):<3} shared {mean(map(_shared, rs)):.2f}  {_exact(rs)}")
-        by = {(r["arm"], r["lineage"]): _shared(r) for r in rows if r["kind"] == kind and r["generation"] == final}
+        by = {(r["arm"], r["lineage"]): _shared(r) for r in rows if r["kind"] == kind and r["shift"] == final}
         pairs[kind] = [by[("A1", j)] - by[("A4", j)] for j in sorted({j for a, j in by if a == "A1"}) if ("A4", j) in by]
         if "positive" in anchors and "none" in anchors and _shared(anchors["positive"]) - _shared(anchors["none"]) >= C_POS:
             scale[kind] = _shared(anchors["positive"]) - _shared(anchors["none"])

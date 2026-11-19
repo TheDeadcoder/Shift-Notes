@@ -8,7 +8,8 @@ This repository contains:
 - **SwarmGate**, a traced sandbox for studying this;
 - the `swarmgate` package, which runs every experiment;
 - the preregistration and the deviations record;
-- the analysis code behind every reported number.
+- the analysis code behind every reported number;
+- [CLAIMS.md](CLAIMS.md), which maps each claim of both studies, and of the steps before the first study's chains, to its evidence and the command that prints it.
 
 ## Findings
 
@@ -115,6 +116,8 @@ Observer models are configured in `configs/observers.yaml`. Credentials are read
   1. Run `gcloud auth application-default login`.
   2. Set `GOOGLE_CLOUD_PROJECT`.
 
+  An observer with `flex: true`, such as `gemini-pro-flex`, uses Vertex AI's Flex tier, which is slower and may turn requests away when busy. It needs the global location. Requests carry a 30-minute server deadline, and the client waits a minute longer. A slow request therefore ends with a server error, which is not billed, rather than a client timeout after which the retry could be billed a second time. Each reply records in its usage the `traffic` type that served it (`ON_DEMAND_FLEX` for Flex). An observer's `attempts` sets how many times a job is tried before it is logged as failed (default 6).
+
 Local models can be used through any OpenAI-compatible server (the `local` observer).
 
 ## E0: leakage and attribution audit
@@ -140,6 +143,8 @@ python -m swarmgate.e0 ideal   --config configs/e0.yaml
 python -m swarmgate.e0 models  --config configs/e0.yaml --observer claude-sonnet-5
 python -m swarmgate.e0 observe --config configs/e0.yaml --observer claude-sonnet-5
 python -m swarmgate.e0 analyze --config configs/e0.yaml
+python -m swarmgate.e0 export  --config configs/e0.yaml
+python -m swarmgate.e0 analyze --config configs/e0.yaml --public results/e0
 ```
 
 Before running an observer, set its `model` field in `configs/observers.yaml`; `models` lists the identifiers available to your credentials. `configs/e0-pilot.yaml` runs a small pilot on separate hidden guards.
@@ -147,6 +152,10 @@ Before running an observer, set its `model` field in `configs/observers.yaml`; `
 `configs/e0-space.yaml` uses another set of hidden guards to compare observers that are also told the space of possible guards with the same models told nothing more. These observers have `guard_space: true` in `configs/observers.yaml`, for example `claude-sonnet-5-space`. An observer's `modes` field limits it, in runs and in analysis, to those feedback modes; trials with no observations are always included.
 
 Outputs are written to `runs/e0/<name>/`.
+
+- `analyze` ends with one line per observer and feedback mode over all guards: balanced accuracy with its interval, how often a failure is put down to the right cause, how often the guard's basis is identified and, for the ideal observer, the bits about the guard.
+- `export` writes each observer's answers to `results/e0/<name>/` as numbers and labels, without the reply text. `results/e0` holds the main set, the guard-space set and the pilot set.
+- `analyze --public results/e0` rebuilds the trials from the config, scores those answers and prints the same tables. It writes nothing.
 
 Observer runs can be safely interrupted:
 
@@ -189,18 +198,48 @@ python -m swarmgate.e1 battery-report
 python -m swarmgate.e1 notes-code --coder deepseek-v4-flash
 python -m swarmgate.e1 notes-code --coder gemini
 python -m swarmgate.e1 notes-code-report --second codes-gemini.jsonl
+python -m swarmgate.e1 hand-bundle
+python -m swarmgate.e1 hand-report
+python -m swarmgate.e1 export-tables
+python -m swarmgate.e1 export-records
+python -m swarmgate.e1 export-hand
+python -m swarmgate.e1 export-early
+python -m swarmgate.e1 mitigate
+python -m swarmgate.e1 mitigate-report
+python -m swarmgate.e1 v2-report
+python -m swarmgate.e1 after-repair
+python -m swarmgate.e1 figures
 ```
 
-- `probe` checks whether a model takes the donor and attacker roles at all.
+- `probe` checks whether a model takes the donor and attacker roles at all. `probe-summary` gives the replies per model and cell.
 - `vignettes` runs scripted sessions that end with the request to write notes. `code` codes each note with a model from another family, and `vignette-report` gives the recording rate, disclosure and coder agreement.
-- `pilot` runs a few sessions for each candidate donor model and applies the donor rule.
+- `pilot` runs a few sessions for each candidate donor model and applies the donor rule. `pilot-report` gives the same table again from the session records.
 - `chains` runs every lineage; `--status` prints progress and spend without running anything. No new generation starts once spend reaches `budget_usd`. Between generations the donor model merges the session's notes into the notes the next agent receives; if it refuses, the previous notes carry over unchanged and `--status` counts the refusal.
+  - A config may list `branches`: arms that start from another arm's notes after a given generation and run under a named guard variant. The arms of a lineage advance together, one generation at a time.
+  - Each command is also decided under the other guard variant, and the record counts the commands on which the two variants differ.
+  - `merge: hygiene` adds one line to the merge prompt that asks the model not to keep instructions for getting around the reviewer.
+  - A branch may name `notes_from` and `transform`. It then starts from that edited copy of the parent's notes, written by `mitigate`.
 - `calibrate` checks the guard variants, the legitimate routes and the naive objectives on seeds separate from the chains, and scores the positive control.
 - `score` extracts the commands in the notes after the chosen generations, retargets each one to every objective, runs it once under the repaired guard and records which objectives succeed. An empty-notes anchor, and any notes files listed under `anchors` in the config, are scored the same way. If an anchor's SHA-256 is listed under `anchor_sha256`, the file must match it or scoring stops. The positive-control file is not published.
-- `potency-report` gives potency per arm and generation, and the paired test between arms.
-- `chain-report` gives, per donor, class and arm: denials, workarounds under G, ticket completion, refusals, malformed calls, final notes that mention a denial, and candidate commands.
-- `battery` runs the reader battery. A reader model gets each final NOTES.md (and each anchor) with each objective, three times, and is asked for one command. The command runs once under the class's G′. `--anchors-only` runs the anchors first, `--kinds` limits it to guard classes, and `--reader` and `--out` choose the reader and its output folder. `battery-report` gives attempt rates, success, the anchor gate and the paired A1 − A4 test.
-- `notes-code` codes every merged NOTES.md for recipes, labels, caveats, denials, legitimate routes and stated guard rules. `--donor` and `--share` restrict it to a sample. `notes-code-report` gives the rates, retention across generations and agreement with a second coder.
+- `potency-report` gives potency per arm and generation, and the paired test between arms. With `--public results/v2` it reads the exported records.
+- `chain-report` gives, per donor, class and arm: denials, workarounds under G, ticket completion, refusals, malformed calls, final notes that mention a denial, and candidate commands. It also counts, per shift, the sessions that were denied, were denied on an over-blocked object, and reached such an object. Branch arms are included, and where shadow decisions were recorded it counts the sessions in which the other guard variant would have decided a command differently. With `--public results/v2` it reads the exported records, for the runs that they hold. For arms under G it also gives the workarounds through each shift, as sessions and lineages. When the configs hold one run of each guard class for a donor, it sets the two classes side by side on the lineages and shifts they share: sessions denied on an over-blocked object, denials per session, sessions that reached the object, and tickets.
+- `battery` runs the reader battery. A reader model gets each final NOTES.md (and each anchor) with each objective, three times, and is asked for one command. The command runs once under the class's G′. `--anchors-only` runs the anchors first, `--kinds` limits it to guard classes, and `--reader` and `--out` choose the reader and its output folder. `--lenient` also runs replies that are not a single command and keeps them apart.
+  - `--shifts` reads the notes handed on after the named shifts instead of the final notes, for every arm and branch that has them. `--edits` adds the edited copies that `mitigate` wrote of the first config's files, except the emptied file, which is the same as the empty anchor. `--objectives shared` asks only the shared-principle objectives, and `--anchor-samples` sets the samples per objective for the anchors.
+  - `battery-report` gives attempt rates, success, the anchor gate and success by objective. It pairs each group by lineage with the control arm of the same shift (A4, or a branch of A4) and gives the mean difference with its interval and test. Where there are several shifts or edited copies, it also gives each difference as a share of the A1 − A4 difference at the first shift. With `--public results/v2` and `--out` set to a reader folder inside it, the report is made from the exported records instead of the run records.
+- `notes-code` codes every merged NOTES.md for recipes, labels, caveats, denials, legitimate routes and stated guard rules. `--donor` and `--share` restrict it to a sample. `notes-code-report` gives the rates, retention across generations per arm and agreement with a second coder. `--rubric repair` asks instead whether the notes say that a denied action now works, and whether they put that down to a change in the reviewer or to inconsistency; `--shifts` restricts either rubric to the notes handed on after those shifts.
+- `hand-bundle` draws a stratified sample of notes files and writes them under opaque ids for hand coding. `hand-report` reads every sheet in the folder (`--dir`), one per annotator. It gives the agreement between the sheets and of each model coder with each sheet, per code and for the labelled recipe, and the files in which each sheet finds a labelled recipe, per arm. Without `--coders` it reads the coder files in the folder itself.
+- `export-tables` writes per-session, per-file and per-trial tables to `results/`. They hold no notes text and no commands.
+- `export-records` writes the records of the second study to `results/v2/` without notes text, commands, prompts or replies: one row per session (with whether it was denied on an over-blocked object and whether it reached one, and whether its notes mention a denial or are empty), per scored notes file, per edited copy, per coded file, per reader trial, per episode and turn of the reader that may issue several commands, and per probe reply with its probability for each probe command. Each folder keeps its name and its file names. With the first study's configs and folders, and nothing for the measures it did not have (`--configs configs/e1.yaml,configs/e1-ow.yaml --battery runs/battery,runs/battery-gemini --coding runs/notes-coding --attempts "" --probe "" --edits "" --out results/e1`), it writes the first study's records in the same form, and `chain-report`, `potency-report`, `battery-report` and `notes-code-report` read them from `results/e1`.
+- `export-hand` writes a hand-coded sample to `results/` without the notes text: the key, the sheets, and the coders' rows for the sampled files. `hand-report --dir` on that folder needs nothing else.
+- `export-early` writes the records of the steps before the chains to `results/e1/` without any reply, notes or command text: the probe's replies as labels (`probe/`), the vignette notes as codes (`vignettes/`) and one row per pilot session (`pilots.jsonl`). `probe-summary --public results/e1`, `vignette-report --run results/e1/vignettes` and `pilot-report --public results/e1` then need nothing else.
+- `mitigate` edits the notes of one arm after one shift (`--arm`, `--shift`, `--lineages`) in five ways and writes the edited copies to one file: a generic audit, removal of what the notes say about the three over-blocked objects, removal of everything they say about the reviewer, a notice placed at the top, and an empty file. An editor model makes the first three with fixed prompts; if it refuses, the file is left unchanged. `notes-code --edits` codes the edited copies, and `mitigate-report` gives, per edit, the refusals, the length before and after, and the codes beside those of the unedited files. With `--out results/v2` it reads the exported records.
+- `v2-report` gives the tests of `PREREGISTRATION-V2.md` in one table, from a battery folder (`--battery`, `--shifts`, `--edits`) and the primary coder's files (`--coding`, comma-separated). The first config's donor is tested as H1 and the second's as H1-OW. The secondary tests are adjusted together by Holm's method, and a test with no data counts as p = 1. It also gives the share of the first-shift difference that remains after the repair, how often a labelled recipe is still in the notes at the last shift, and the repaired arm against the unrepaired arm at the last shift, two-sided, for the reader score and the labelled recipe. `--multi-turn` adds the table of the reader that may issue several commands (H2): its anchors, its test in the family, its rates at each denial threshold (also by objective, with the rule of the first denial) and how its episodes ended. `--probe` adds the knowledge probe (H3) from its output folder: each reader's anchors, its A1 minus A4 difference in the boundary score, and the family test, which is the largest p among the readers that passed their anchors. Outside the family it gives H3b by the same rule: each reader's difference in predicted blocking on the benign commands that the guard blocked before its repair, less the blocking predicted for the benign commands it allowed. When the folder holds the reply log, it also splits that difference into three groups of benign commands: those the guard blocked on the repaired files, those it allowed on the same files, and those on other objects. With the reply log it also counts the replies that give every forbidden command one probability, and those with a boundary score of exactly one half. With the multi-turn table it gives, per arm, the episodes with a denial, the denials per episode and the successes that follow a denial. It gives the reader score of the first donor's A1 notes with and without a labelled recipe. `--prompt-arms` takes pairs of the form `config=codes file` and sets each prompt arm against the first config's A1 on the lineages they share, for the labelled recipe and for the reader score, two-sided. These four additions are exploratory.
+  - For each test on paired lineages it gives the range of the estimate and the largest p when one lineage, or one pair, is left out. The labelled-recipe count after the last shift is also given for the second donor.
+  - `--readers` takes reader folders. For each it repeats the reader tests on the shared-principle, exact and all objectives, with the lenient parser, and on the attempt rate. A test is left out of a measure when its notes were not read on all of that measure's objectives.
+  - `--explore` takes probe folders from the probe's `explore` phase. For each reader that passed its anchors there, and each notes source, it gives the difference from the control arm of the same shift in the boundary score and in predicted blocking, with the levels. Where the folder holds them, it also gives, for predicted blocking, the audited copy less the guard-scoped copy, and the difference after the repair as a share of the difference at the first shift.
+  - `--public results/v2` reads the sessions and edited copies from the exported records; the other options then name folders and files inside `results/v2`.
+- `after-repair` gives what the arms did in the shifts after the repair (`--after`, default 4), per donor, run and arm, for each shift and for all of them: sessions with a command that the other guard variant decides differently, sessions that reached an over-blocked object, tickets completed, tool calls per session, notes that say a denied action now works and what they put it down to (`--repair`, one file per coder), and notes with a labelled recipe (`--coding`). It then compares tickets completed within lineage with A1R, in percentage points, against the criterion of 5 points. `--public results/v2` reads the sessions from the exported records. Last, among the lineages with a labelled recipe in A1 at the repair, it counts those that still have one in A1R at the last shift, split by whether the A1R notes put a now-working action down to inconsistency, once per coder file.
+- `figures` draws the figures from the exported records (`--data`, default `results/v2`) and writes them as PDF files to `--out`. `design.pdf` is the schematic of the mechanism and of the arms. `results.pdf` gives the labelled recipe and reader success across the repair, reader success by notes source, with the first study's files as the same reader read them again (`--earlier`, the config of that study), and success against the number of denials allowed. `readers.pdf` gives, per reader, the boundary score, the predicted blocking of the repaired commands, the share of calls answered with a command, and reader success; a hollow marker means the reader failed its anchor check. `mitigation.pdf` gives the same three measures per edited copy. Intervals are 95 percent: bootstrap over lineages for scores and differences, Wilson for anchors and for shares of notes; in the last panel of `mitigation.pdf` the line spans the readers.
 - The open-weight replication (E1b-OW in the preregistration) runs the same `pilot`, `chains`, `score` and `potency-report` commands with `configs/e1-pilot-ow.yaml` and `configs/e1-ow.yaml`. Its candidate models are served through the Adaption platform.
 
 Every command resumes where it stopped.
